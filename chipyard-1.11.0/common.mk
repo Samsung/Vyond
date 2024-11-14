@@ -253,7 +253,6 @@ $(SFC_MFC_TARGETS) &: $(TAPEOUT_CLASSPATH_TARGETS) $(FIRRTL_FILE) $(FINAL_ANNO_F
 		--verify-each=true \
 		--warn-on-unprocessed-annotations \
 		--disable-annotation-classless \
-		--disable-opt \
 		--disable-annotation-unknown \
 		--mlir-timing \
 		--lowering-options=$(shell cat $(MFC_LOWERING_OPTIONS)) \
