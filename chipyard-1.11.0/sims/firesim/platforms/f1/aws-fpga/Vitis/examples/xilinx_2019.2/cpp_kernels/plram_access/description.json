@@ -1,0 +1,76 @@
+{
+    "name": "PLRAM Memory Access (C)", 
+    "description": [
+        "This example shows the usage of PLRAM and how to use it with simple matrix multiplication (Row x Col)."
+    ],
+    "keywords": [
+        "PLRAM"
+    ], 
+    "key_concepts": [
+        "Vitis Memory Hierarchy", 
+        "PLRAMs"
+    ], 
+    "ndevice": [
+        "zc", 
+        "u50",
+ 	"samsung"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "compute_units": [
+                        {
+                            "arguments": [
+                                {
+                                    "name": "a", 
+                                    "memory": "PLRAM[0]"
+                                }, 
+                                {
+                                    "name": "b", 
+                                    "memory": "DDR[0]"
+                                }, 
+                                {
+                                    "name": "c", 
+                                    "memory": "PLRAM[1]"
+                                }
+                            ]
+                        }
+                    ], 
+                    "name": "mmult", 
+                    "location": "src/mmult.cpp"
+                }
+            ], 
+            "name": "mmult"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/mmult.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

@@ -1,0 +1,54 @@
+{
+    "name": "Dataflow SubFunction OpenCL(CL)", 
+    "description": [
+        "This is simple example of vector addition to demonstrate how OpenCL Dataflow allows user to run multiple sub functions together to achieve higher throughput."
+    ],
+    "keywords": [
+        "xcl_dataflow", 
+        "xclDataflowFifoDepth"
+    ], 
+    "key_concepts": [
+        "SubFunction Level Parallelism"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "location": "src/adder.cl", 
+                    "clflags": "--config PROJECT/adder_adder.ini", 
+                    "name": "adder"
+                }
+            ], 
+            "name": "adder"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/adder.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

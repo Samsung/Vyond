@@ -1,0 +1,54 @@
+{
+    "name": "Local Memory Two Parallel Read/Write (C)", 
+    "description": [
+        "This is simple example of vector addition to demonstrate how to utilize both ports of Local Memory."
+    ],
+    "keywords": [
+        "#pragma HLS UNROLL FACTOR=2"
+    ], 
+    "key_concepts": [
+        "Kernel Optimization", 
+        "2port BRAM Utilization", 
+        "two read/write Local Memory"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "vadd", 
+                    "location": "src/vadd.cpp"
+                }
+            ], 
+            "name": "vadd"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/vadd.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

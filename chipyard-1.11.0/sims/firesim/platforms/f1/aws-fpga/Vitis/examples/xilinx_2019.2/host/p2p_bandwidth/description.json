@@ -1,0 +1,70 @@
+{
+    "name": "P2P bandwidth Example", 
+    "description": [
+        "This is simple example to test Synchronous and Asyncronous data transfer between SSD and FPGA."
+    ],
+    "keywords": [
+        "XCL_MEM_EXT_P2P_BUFFER",
+        "pread",
+        "pwrite" 
+    ],
+    "key_concepts": [
+        "P2P", 
+        "SmartSSD",
+        "XDMA"
+    ],
+    "platform_type": "pcie",
+    "os": [
+        "Linux"
+    ],
+    "ndevice": [
+        "zc",
+	"u200",
+	"u250",
+	"u50",
+	"u280"
+    ],
+     "runtime": [
+        "OpenCL"
+    ], 
+        "match_ini": "false",
+    "launch": [
+        {
+            "cmd_args": "BUILD/copy_kernel.xclbin -r /dev/nvme0n1", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2",
+		"src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        },
+        "linker" : {
+            "options" : ["-laio"
+                ]
+        }
+    },  
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "copy", 
+                    "location": "src/copy_kernel.cpp"
+                }
+            ], 
+            "name": "copy_kernel"
+        }
+    ],
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

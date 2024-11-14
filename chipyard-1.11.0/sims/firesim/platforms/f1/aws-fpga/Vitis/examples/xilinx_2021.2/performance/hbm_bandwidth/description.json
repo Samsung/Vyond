@@ -1,0 +1,80 @@
+{
+    "name": "HBM Bandwidth", 
+    "description": [
+        "This is a HBM bandwidth check design. Design contains 3 compute units of a kernel which has access to all HBM pseudo-channels (0:31). Host application allocate buffer into all HBM banks and run these 3 compute units concurrently and measure the overall bandwidth between Kernel and HBM Memory."
+    ],
+    "flow": "vitis",
+    "platform_blacklist": [
+        "_u25_",
+        "u30",
+        "u200", 
+        "zc",
+        "vck", 
+        "u250",
+        "aws-vu9p-f1",
+        "samsung",
+        "_u2_",
+        "x3522pv",
+        "nodma"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "platform_type": "pcie",
+    "host": {
+        "host_exe": "hbm_bandwidth",
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2/xcl2.cpp",
+                "./src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "location": "src/krnl_vaddmul.cpp", 
+                    "name": "krnl_vaddmul"
+                }
+            ], 
+            "name": "krnl_vaddmul",
+            "ldclflags": "--config PROJECT/krnl_vaddmul.cfg"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/krnl_vaddmul.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ], 
+    "testinfo": {
+        "profile": "no",
+        "disable": false,
+        "jobs": [
+            {
+                "index": 0,
+                "dependency": [],
+                "env": "",
+                "cmd": "",
+                "max_memory_MB": 32768,
+                "max_time_min": 300
+            }
+        ],
+        "targets": [
+            "vitis_sw_emu",
+            "vitis_hw_emu",
+            "vitis_hw"
+        ],
+        "category": "canary"
+    }
+}

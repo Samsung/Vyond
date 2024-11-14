@@ -1,0 +1,80 @@
+{
+    "name": "Stream Kernel to Kernel", 
+    "description": [
+        "This is a simple Vector Increment RTL Kernel to Kernel design with 1 Stream input and 1 Stream output that demonstrates on how to process an input stream of data for computation in an application."
+    ], 
+    "keywords": [
+        "cl_stream", 
+        "CL_STREAM_EOT"
+    ], 
+    "key_concepts": [
+        "Read/Write Stream", 
+        "Create/Release Stream", 
+        "RTL Kernel"
+    ], 
+    "ndevice": [
+        "zc",
+        "xdma",
+	"xilinx_u250_qep",	
+	"aws",
+        "samsung"
+    ], 
+    "targets": [
+        "hw", 
+        "hw_emu"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "gui": false, 
+    "host": {
+        "linker": {
+            "options": [
+                "-pthread"
+            ]
+        }, 
+        "host_exe": "vadd_stream", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2", 
+                "src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "kernel_type": "RTL", 
+                    "name": "myadder1"
+                }, 
+                {
+                    "kernel_type": "RTL", 
+                    "name": "myadder2"
+                }
+            ], 
+            "name": "myadder",
+	    "ldclflags": "--config PROJECT/myadder.ini"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/myadder.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "config_make": "config.mk", 
+    "output_files": "tmp_kernel_pack* packaged_kernel* _x* *_ex project* pinfo.json *.xo",
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

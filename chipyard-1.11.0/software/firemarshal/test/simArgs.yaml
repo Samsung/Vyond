@@ -1,0 +1,9 @@
+{
+  "name" : "simArgs",
+  "base" : "br-base.json",
+  "cpus" : 2,
+  "run" : "reportSimArgs.sh",
+  "testing" : {
+      "refDir" : "refOutput"
+  }
+}

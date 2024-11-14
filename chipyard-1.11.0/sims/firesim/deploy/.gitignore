@@ -1,0 +1,11 @@
+*.pyc
+switchbuild/switch*.*.*.*
+switchbuild/switch
+results-build/*
+results-workload/*
+config_*.yaml
+backup_config_*.yaml
+generated-topology-diagrams/
+logs/*.log
+built-hwdb-entries/
+/firesim.py

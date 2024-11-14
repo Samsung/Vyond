@@ -1,0 +1,16 @@
+{
+  "name" : "spike-jobs",
+  "workdir" : "spike",
+  "base" : "spike.yaml",
+  "testing" : {
+    "refDir" : "refJobs"
+  },
+  "jobs" : [
+    {
+      "name" : "j0"
+    },
+    {
+      "name" : "j1"
+    }
+  ]
+}

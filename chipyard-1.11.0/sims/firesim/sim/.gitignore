@@ -1,0 +1,29 @@
+target
+generated-src
+output
+test.disk
+tags
+*.timestamp
+AsyncResetReg.v
+firrtl_black_box_resource_files.f
+lib/firrtl.jar
+*.swp
+.bsp/
+.ivy2/
+.sbt/
+
+# VSCode related files
+.vscode/*
+# We commit this so that the metals plugin is properly configured out of the
+# box.  VSCode will modify this on-the-fly if users make workspace settings
+# changes. If that becomes a problem (i.e., it happens frequently, and people
+# complain about having a dirty tracked file) we can install these defaults
+# instead.
+!.vscode/settings.json
+!.vscode/sbt-launch.sh
+
+# Ignore metals-generated files
+.metals/
+.bloop/
+project/metals.sbt
+project/project

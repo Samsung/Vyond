@@ -1,0 +1,108 @@
+{
+    "name": "Stream Free Running Kernel (RTL Kernel)", 
+    "description": [
+        "This is simple example which demonstrate how to use and configure a free running RTL kernel."
+    ], 
+    "flow": "vitis",
+    "keywords": [
+        "ap_axiu",
+        "hls::stream" 
+    ], 
+    "key_concepts": [
+        "Read/Write Stream", 
+        "RTL Kernel",
+        "Free Running Kernel"
+    ], 
+    "platform_blacklist": [
+        "2018",
+        "vck",
+        "zc706",
+        "nodma"
+    ],
+    "targets": [
+        "hw", 
+        "hw_emu"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "gui": false, 
+    "host": {
+        "linker": {
+            "options": "-pthread"
+        }, 
+        "host_exe": "rtl_streaming_free_running_k2k",
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2/xcl2.cpp", 
+                "src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "kernel_type": "RTL", 
+                    "name": "myadder"
+                },
+                {
+                    "name": "krnl_mm2s", 
+                    "location": "src/krnl_mm2s"
+                }, 
+                {
+                    "name": "krnl_s2mm", 
+                    "location": "src/krnl_s2mm"
+                }
+            ], 
+            "name": "myadder",
+            "ldclflags": "--config PROJECT/myadder.cfg"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/myadder.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "config_make": "config.mk", 
+    "output_files": [
+        "tmp_kernel_pack*",
+        "packaged_kernel*",
+        "_x*",
+        "*_ex",
+        "project*",
+        "pinfo.json",
+        "*.xo"
+    ],
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ],
+    "testinfo": {
+        "disable": false,
+        "jobs": [
+            {
+                "index": 0,
+                "dependency": [],
+                "env": "",
+                "cmd": "",
+                "max_memory_MB": 32768,
+                "max_time_min": 300
+            }
+        ],
+        "targets": [
+            "vitis_hw_emu",
+            "vitis_hw"
+        ],
+        "category": "canary"
+    }
+}

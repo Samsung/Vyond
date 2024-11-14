@@ -1,0 +1,12 @@
+config.status
+Makefile
+prefix.mk
+*.tar.gz
+*.pyc
+*.swp
+*.vcd
+*.vpd
+.DS_Store
+*/target
+*.log
+target

@@ -1,0 +1,73 @@
+name: 'Install CIRCT'
+description: 'Install pre-built binaries and libraries from llvm/circt'
+branding:
+  icon: 'download'
+  color: 'blue'
+
+inputs:
+  version:
+    description: |
+      The version of CIRCT to install.  This must match a release of CIRCT,
+      e.g., 'firtool-1.56.1' or one of the following special strings:
+        - 'nightly' installs the latest nightly
+        - 'version-file' installs the release specified by a JSON file whose
+          location is set by the 'version-file' input.  This is done to
+          facilitate Continuous Delivery (CD) flows because GitHub Actions are
+          not allowed to modify anything in the '.github/' directory.
+    required: true
+    default: 'version-file'
+  version-file:
+    description: |
+      A path to a JSON file that sets the CIRCT version to use.  This is
+      required, but can be a dummy value if the user will not use the
+      'version-file' option for the 'version' input.
+
+      The format of this JSON file is as follows where '<version>' should be
+      replaced with a CIRCT release:
+
+          {
+            "version": "<version>"
+          }
+    required: true
+    default: './etc/circt.json'
+  github-token:
+    description: |
+      The GitHub token used to download CIRCT nightly.
+    required: true
+    default: ${{ github.token }}
+  file-name:
+    description: |
+      The name of the CIRCT tarball to install.  For available tarballs, see
+      what is uploaded by a nightly build or by a release.  Example values are:
+        - 'circt-full-shared-linux-x64.tar.gz'
+        - 'firrtl-bin-macos-x64.tar.gz'
+    required: true
+    default: 'circt-full-shared-linux-x64.tar.gz'
+  install-dir:
+    description: |
+      The directory where CIRCT will be installed.
+    required: true
+    default: 'circt'
+
+runs:
+  using: composite
+  steps:
+    - name: 'Download release or nightly CIRCT'
+      shell: bash
+      # TODO: This uses ${GITHUB_ACTION_PATH} and not ${{ github.action_path }}
+      # to work around GitHub runners incorrectly substituting the latter when
+      # running in a container environment [1].  Remove this if this is fixed.
+      #
+      # [1]: https://github.com/actions/runner/issues/2185
+      run: |
+        ${GITHUB_ACTION_PATH}/bin/download-release-or-nightly-circt.sh \
+          -f ${{ inputs.file-name }} \
+          -g ${{ inputs.github-token }} \
+          -i ${{ inputs.install-dir }} \
+          -v ${{ inputs.version }} \
+          -x ${{ inputs.version-file }}
+
+    - name: Add the ${{ inputs.install-dir }}/bin to $PATH
+      shell: bash
+      run: |
+        echo "$(pwd)/${{ inputs.install-dir }}/bin" >> $GITHUB_PATH

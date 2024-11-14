@@ -1,0 +1,54 @@
+{
+    "name": "Loop Reordering (CL)", 
+    "description": [
+        "This is a simple example of matrix multiplication (Row x Col) to demonstrate how to achieve better pipeline II factor by loop reordering."
+    ],
+    "keywords": [
+        "xcl_pipeline_loop", 
+        "xcl_array_partition"
+    ], 
+    "key_concepts": [
+        "Kernel Optimization", 
+        "Loop reorder to improve II"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "mmult", 
+                    "location": "src/mmult.cl"
+                }
+            ], 
+            "name": "mmult"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/mmult.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

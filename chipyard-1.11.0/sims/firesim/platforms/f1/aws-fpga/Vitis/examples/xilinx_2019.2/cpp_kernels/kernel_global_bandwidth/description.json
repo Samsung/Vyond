@@ -1,0 +1,60 @@
+{
+    "name": "Kernel Global Bandwidth", 
+    "description": [
+        "Bandwidth test of global to local memory."
+    ], 
+    "ndevice": [
+	"u50",
+	"zc"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "kernel_global", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2", 
+                "src/kernel_global_bandwidth.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "max_memory_ports": "true", 
+                    "name": "bandwidth", 
+                    "location": "src/kernel.cl"
+                }
+            ], 
+            "name": "krnl_kernel_global"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/krnl_kernel_global.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "config_make": "config.mk", 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ], 
+    "testinfo": {
+        "level_up": [
+            {
+                "hw": "1"
+            }
+        ]
+    } 
+}

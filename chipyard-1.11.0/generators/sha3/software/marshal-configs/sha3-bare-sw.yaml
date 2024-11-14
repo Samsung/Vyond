@@ -1,0 +1,10 @@
+{
+  "name" : "sha3-bare-sw",
+  "workdir" : "..",
+  "base" : "bare-base.json",
+  "host-init" : "build.sh",
+  "bin" : "tests/bare/sha3-sw.riscv",
+  "testing" : {
+    "refDir" : "test-reference/bare-sw"
+  }
+}

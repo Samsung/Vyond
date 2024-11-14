@@ -1,0 +1,93 @@
+{
+    "name": "Advanced Configuration", 
+    "description": [
+        "This is simple example to describe how user can provide various advanced options in Vitis flow."
+    ],
+    "flow": "vitis",
+    "keywords": [
+	"config",
+	"set_clock_uncertainity",
+	"kernel_frequency",
+	"hls.pre_tcl"
+    ], 
+    "key_concepts": [
+        "Using custom Tcl", 
+        "Setting Kernel Clock Frequency",
+	"Clock Uncertainity"
+    ],
+    "platform_type": "pcie", 
+    "platform_blacklist": [
+        "zc",
+        "vck",
+        "nodma"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "advanced_config",
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2/xcl2.cpp",
+                "./src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    },
+   "v++": {
+        "build_datafiles" : [            
+            "PROJECT/my_directives.tcl",
+            "PROJECT/vadd_vadd.cfg",
+            "PROJECT/vadd.cfg"
+        ]
+     }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "vadd", 
+		    "clflags": "--config vadd_vadd.cfg",
+                    "location": "src/vadd.cpp"
+                }
+            ], 
+            "name": "vadd",
+            "ldclflags": "--config vadd.cfg"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/vadd.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ],
+    "testinfo": {
+        "disable": false,
+        "jobs": [
+            {
+                "index": 0,
+                "dependency": [],
+                "env": "",
+                "cmd": "",
+                "max_memory_MB": 32768,
+                "max_time_min": 300
+            }
+        ],
+        "targets": [
+            "vitis_sw_emu",
+            "vitis_hw_emu",
+            "vitis_hw"
+        ],
+        "category": "canary"
+    }
+}

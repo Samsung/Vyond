@@ -1,0 +1,94 @@
+package sifive.fpgashells.ip.microsemi.polarfireccc
+
+import chisel3._
+import freechips.rocketchip.util.ElaborationArtefacts
+import sifive.fpgashells.clocks._
+
+case class PolarFireCCCParameters(
+  name:             String,
+  pll_in_freq:      Double  = 50,
+  gl0Enabled:       Boolean = false,
+  gl1Enabled:       Boolean = false,
+  gl2Enabled:       Boolean = false,
+  gl3Enabled:       Boolean = false,
+  gl0_0_out_freq:   Double  = 111.111,
+  gl1_0_out_freq:   Double  = 111.111,
+  gl2_0_out_freq:   Double  = 111.111,
+  gl3_0_out_freq:   Double  = 111.111,
+  gl0_0_pll_phase:  Double  = 0,
+  gl1_0_pll_phase:  Double  = 0,
+  gl2_0_pll_phase:  Double  = 0,
+  gl3_0_pll_phase:  Double  = 0,
+  feedback:         Boolean = false
+)
+
+// Black Box for Microsemi PolarFire Clock Conditioning Circuit (CCC) Actel:SgCore:PF_CCC:1.0.112
+class PolarFireCCCIOPads(c : PLLParameters) extends Bundle {
+  val REF_CLK_0      = Input(Clock())
+  val OUT0_FABCLK_0  = if (c.req.size >= 1) Some(Output(Clock())) else None
+  val OUT1_FABCLK_0  = if (c.req.size >= 2) Some(Output(Clock())) else None
+  val OUT2_FABCLK_0  = if (c.req.size >= 3) Some(Output(Clock())) else None
+  val OUT3_FABCLK_0  = if (c.req.size >= 4) Some(Output(Clock())) else None
+  val PLL_LOCK_0     = Output(Bool())
+}
+
+//scalastyle:off
+//turn off linter: blackbox name must match verilog module
+class PolarFireCCC(c : PLLParameters) extends BlackBox with PLLInstance {
+  val moduleName = c.name
+  override def desiredName = c.name
+
+  val io = IO(new PolarFireCCCIOPads(c))
+  def getInput = io.REF_CLK_0
+  def getReset = None
+  def getLocked = io.PLL_LOCK_0
+  def getClocks = Seq() ++ io.OUT0_FABCLK_0 ++ io.OUT1_FABCLK_0 ++ 
+                           io.OUT2_FABCLK_0 ++ io.OUT3_FABCLK_0 
+  
+  def getClockNames = Seq.tabulate (c.req.size) { i =>
+    s"${c.name}/${c.name}_0/pll_inst_0/OUT${i}"
+  }
+  
+  val used = Seq.tabulate(4) { i =>
+    s" GL${i}_0_IS_USED:${i < c.req.size} \\\n"
+  }.mkString
+
+  val outputs = c.req.zipWithIndex.map { case (req, i) =>
+      s""" GL${i}_0_OUT_FREQ:${req.freqMHz} \\
+         | GL${i}_0_PLL_PHASE:${req.phaseDeg} \\
+         |""".stripMargin
+  }.mkString
+
+  // !!! work-around libero bug
+  // val feedback = if (c.input.feedback) "External" else "Post-VCO"
+  val feedback = "Post-VCO"
+
+  ElaborationArtefacts.add(s"${moduleName}.libero.tcl",
+    s"""create_design -id Actel:SgCore:PF_CCC:1.0.115 -design_name {${moduleName}} -config_file {} -params {} -inhibit_configurator 0
+       |open_smartdesign -design {${moduleName}}
+       |configure_design -component {${moduleName}} -library {}
+       |configure_vlnv_instance -component {${moduleName}} -library {} -name {${moduleName}_0}  -validate_rules 0 -params { \\
+       | PLL_IN_FREQ_0:${c.input.freqMHz} \\
+       | PLL_FEEDBACK_MODE_0:${feedback} \\
+       |${used}${outputs}}
+       |fix_vlnv_instance -component {${moduleName}} -library {} -name {${moduleName}_0}
+       |open_smartdesign -design {${moduleName}}
+       |configure_design -component {${moduleName}} -library {}
+       |""".stripMargin)
+}
+
+/*
+   Copyright 2016 SiFive, Inc.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/

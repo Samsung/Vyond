@@ -1,0 +1,70 @@
+{
+    "name": "SLR Assign (CL)", 
+    "description": [
+        "This is simple example to describe SLR assignment information for a platform design. This example highlights how to provide extra input to assign the logic of the kernel into a nominated SLR. In this example we are assigning first kernel(Vector Multiplication) to SLR0 and assigning the second kernel(Vector Addition) to SLR1"
+    ],
+    "keywords": [
+        "slr"
+    ], 
+    "key_concepts": [
+        "SLR Assignments"
+    ], 
+    "ndevice": [
+        "zc", 
+	"samsung"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "compute_units": [
+                        {
+                            "slr": "SLR1"
+                        }
+                    ], 
+                    "name": "vmult", 
+                    "location": "src/kernel.cl"
+                }, 
+                {
+                    "compute_units": [
+                        {
+                            "slr": "SLR1"
+                        }
+                    ], 
+                    "name": "vadd", 
+                    "location": "src/kernel.cl"
+                }
+            ], 
+            "name": "vmult_vadd"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/vmult_vadd.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

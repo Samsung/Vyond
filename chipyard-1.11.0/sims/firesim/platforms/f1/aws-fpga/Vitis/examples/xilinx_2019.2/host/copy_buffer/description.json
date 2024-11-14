@@ -1,0 +1,60 @@
+{
+    "name": "Copy Buffer (C)", 
+    "description": [
+        "This Copy Buffer example demonstrate how one buffer can be copied from another buffer."
+    ],
+    "keywords": [
+        "cl::CommandQueue",
+        "enqueueCopyBuffer",
+        "enqueueWriteBuffer", 
+        "enqueueReadBuffer",  
+        "enqueueMigrateMemObjects"
+    ], 
+    "key_concepts": [
+        "Copy Buffer"
+    ], 
+    "ndevice": [
+        "xilinx_u200_xdma_201830",
+        "xilinx_u250_xdma_201830"
+    ],
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "vector_add", 
+                    "location": "src/vector_addition.cpp"
+                }
+            ], 
+            "name": "vector_addition"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/vector_addition.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

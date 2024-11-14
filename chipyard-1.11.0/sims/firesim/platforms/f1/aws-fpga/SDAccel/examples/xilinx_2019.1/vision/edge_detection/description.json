@@ -1,0 +1,34 @@
+{
+    "runtime": ["OpenCL"],
+    "example": "Edge Detection",
+    "overview": [
+        "Implementation of a Sobel Filter for edge detection."
+    ],
+    "opencv": true,
+    "host_exe": "edge",
+    "host_srcs": "src/edge.cpp",
+    "host_hdrs": "src/edge.h",
+    "cmd_args": "BUILD/krnl_edge.xclbin PROJECT/data/input/eiffel.bmp",
+    "output_files": "input.bmp output.bmp",
+    "libs": [
+        "opencv",
+        "xcl2"
+    ], 
+    "containers" : [
+        {
+            "name": "krnl_edge",
+            "accelerators": [
+                {
+                    "name": "krnl_sobel", 
+                    "location": "src/krnl_sobelfilter.cl"
+                }
+            ]
+        }
+    ],
+    "contributors": [
+        {
+            "group": "Xilinx",
+            "url": "http://www.xilinx.com"
+        }
+    ]
+}

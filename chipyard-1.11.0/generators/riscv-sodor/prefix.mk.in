@@ -1,0 +1,11 @@
+# Declaration of common variables
+
+srcDir          := @abs_top_srcdir@
+buildDir        := @abs_top_builddir@
+
+# Paths to different source trees
+chiseldir       := @chiseldir@
+
+CXX := @CXX@
+SBT := java -Xmx4096M -Xss8M -XX:MaxPermSize=128M -jar $(srcDir)/sbt/sbt-launch.jar $(SBT_FLAGS)
+

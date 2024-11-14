@@ -1,0 +1,88 @@
+{
+    "name": "Hardware Debug (RTL Kernel)", 
+    "description": [
+        "This is an example that showcases the Hardware Debug of Vector Addition RTL Kernel in Hardware."
+    ], 
+    "flow": "vitis",
+    "key_concepts": [
+        "RTL Kernel Debug"
+    ], 
+    "targets": [
+        "hw"
+    ],
+   "ndevice": [
+      	"vck"
+    ], 
+    "platform_blacklist": [
+      	"vck"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "gui": false, 
+    "xcl": true, 
+    "host": {
+        "host_exe": "rtl_vadd_hw_debug",
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2/xcl2.cpp", 
+                "src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "kernel_type": "RTL", 
+                    "name": "vadd"
+                }
+            ], 
+            "name": "vadd"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/vadd.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "config_make": "config.mk", 
+    "output_files": "tmp_kernel_pack* packaged_kernel*", 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ],
+    "more_info": [
+        " ", 
+        "**For more information on the steps involved in debugging Vitis RTL Kernel Designs check the links below**", 
+        " ", 
+        "[Debug Core setup in the RTL kernel design and host design modifications to allow setup of debug triggers prior to running the kernel](https://github.com/Xilinx/Vitis_Accel_Examples/wiki/rtl_kernel_debug)"
+    ],
+    "testinfo": {
+        "profile": "no",
+        "disable": false,
+        "jobs": [
+            {
+                "index": 0,
+                "dependency": [],
+                "env": "",
+                "cmd": "",
+                "max_memory_MB": 32768,
+                "max_time_min": 300
+            }
+        ],
+        "targets": [
+            "vitis_hw"
+        ],
+        "category": "canary"
+    } 
+}

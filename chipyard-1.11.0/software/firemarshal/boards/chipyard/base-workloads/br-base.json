@@ -1,0 +1,16 @@
+{
+  "name" : "br-base",
+  "distro" : {
+      "name" : "br",
+      "opts" : {
+          "configs" : ["buildroot-config"]
+      }
+  },
+  "linux" : {
+      "source" : "../../linux",
+      "config" : "linux-config"
+  },
+  "firmware" : {
+      "opensbi-src" : "../../firmware/opensbi"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name" : "dummy-bare",
+  "base" : "bare-base.json",
+  "host-init" : "build.sh",
+  "jobs" : [
+    {
+      "name" : "real",
+      "bin" : "hello"
+    },
+    {
+      "name" : "dummy",
+      "base" : "dummy.yaml"
+    }
+  ],
+  "testing" : {
+    "refDir" : "refOutput"
+  }
+}

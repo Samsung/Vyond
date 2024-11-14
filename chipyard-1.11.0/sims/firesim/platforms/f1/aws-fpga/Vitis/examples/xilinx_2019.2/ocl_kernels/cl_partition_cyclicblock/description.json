@@ -1,0 +1,73 @@
+{
+    "name": "Array Block and Cyclic Partitioning (CL)",
+    "description": [
+        "This example shows how to use array block and cyclic partitioning to improve performance of a kernel"
+    ], 
+    "keywords": [
+        "xcl_array_partition", 
+        "cyclic", 
+        "block"
+    ], 
+    "key_concepts": [
+        "Kernel Optimization", 
+        "Array Partitioning", 
+        "Block Partition", 
+        "Cyclic Partition"
+    ], 
+    "ndevice": [
+        "zc702",
+        "zc706"
+    ],
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "array_partition", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "matmul_naive", 
+                    "location": "src/matmul.cl"
+                }, 
+                {
+                    "name": "matmul_partition", 
+                    "location": "src/matmul.cl"
+                }
+            ], 
+            "name": "matmul"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/matmul.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "output_files": "output.png", 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ], 
+    "testinfo": {
+        "level_up": [
+            {
+                "hw": "1"
+            }
+        ]
+    } 
+}

@@ -1,0 +1,7 @@
+# Can ignore specific files
+.DS_Store
+*/*.swp
+*.pyc
+*.o
+*dramsim2_ini
+caches/caches

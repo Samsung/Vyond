@@ -1,0 +1,4 @@
+
+
+#define __STDC_FORMAT_MACROS
+#define HAVE_LIBZMQ

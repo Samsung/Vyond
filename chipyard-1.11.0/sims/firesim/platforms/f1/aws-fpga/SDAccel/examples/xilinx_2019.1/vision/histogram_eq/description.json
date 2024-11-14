@@ -1,0 +1,42 @@
+{
+    "runtime": ["OpenCL"],
+    "example": "Histogram Equalization",
+    "overview": [
+        "This is an optimized implementation of a 12-bit histogram equalizer targeting execution on an SDAccel supported FPGA acceleration card."
+    ],
+    "perf_fields": ["Board", "Image Size", "Frames per Second"],
+    "performance": [
+        [
+            "xilinx:adm-pcie-7v3:1ddr", "2,048 x 1,080", "333"
+        ]
+    ],
+    "xcl": false,
+    "opencv": true,
+    "host_exe": "equalizer",  
+    "host_srcs": "src/equalizer.cpp",
+    "host_hdrs": "src/equalizer.h",      
+    "cmd_args": "BUILD/krnl_equalizer.xclbin PROJECT/data/race_2k.bmp",
+    "output_files": "out.bmp",        
+    "libs": [
+        "opencv", 
+        "xcl2"
+    ], 
+    "containers": [
+	{
+	"name": "krnl_equalizer",
+	"accelerators": [
+        {
+            "name": "krnl_equalizer", 
+            "location": "src/krnl_equalizer.cl",
+            "clflags"   : "--xp param:compiler.version=31"
+        }
+	]
+	}
+    ],
+    "contributors": [
+        {
+            "group": "Xilinx",
+            "url": "http://www.xilinx.com"
+        }
+    ]
+}

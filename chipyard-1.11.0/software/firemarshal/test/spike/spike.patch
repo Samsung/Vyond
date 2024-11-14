@@ -1,0 +1,12 @@
+diff --git a/riscv/sim.cc b/riscv/sim.cc
+index 71ac4528..23bf238d 100644
+--- a/riscv/sim.cc
++++ b/riscv/sim.cc
+@@ -62,6 +62,7 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
+     remote_bitbang(NULL),
+     debug_module(this, dm_config)
+ {
++  printf("Global : spike\n");
+   signal(SIGINT, &handle_signal);
+ 
+   sout_.rdbuf(std::cerr.rdbuf()); // debug output goes to stderr by default

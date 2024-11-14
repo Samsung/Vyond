@@ -1,0 +1,4 @@
+*.riscv
+*.asm
+*.o
+libgloss

@@ -1,0 +1,56 @@
+{
+    "name": "Burst Read/Write (CL)", 
+    "description": [
+        "This is simple example of using AXI4-master interface for burst read and write"
+    ],
+    "keywords": [
+	"compiler.interfaceRdBurstLen",
+	"compiler.interfaceWrBurstLen"
+    ], 
+    "key_concepts": [
+        "burst access"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2", 
+                "REPO_DIR/common/includes/bitmap"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2", 
+                "REPO_DIR/common/includes/bitmap"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "location": "src/vadd.cl", 
+                    "clflags": "--config PROJECT/vadd_vadd.ini", 
+                    "name": "vadd"
+                }
+            ], 
+            "name": "vadd"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/vadd.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

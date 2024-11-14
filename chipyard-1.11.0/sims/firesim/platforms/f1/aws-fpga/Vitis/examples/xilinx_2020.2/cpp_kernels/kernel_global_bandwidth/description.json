@@ -1,0 +1,90 @@
+{
+    "name": "Kernel Global Bandwidth", 
+    "description": [
+        "Bandwidth test of global to local memory."
+    ], 
+    "flow": "vitis",
+    "ndevice": [
+        "u50",
+        "vck",
+        "zc"
+    ], 
+    "platform_blacklist": [
+        "u50",
+        "vck",
+        "zc"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "kernel_global_bandwidth",
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2/xcl2.cpp", 
+                "src/kernel_global_bandwidth.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "v++": {
+        "build_datafiles" : [            
+            "PROJECT/hls_config.tcl",
+            "PROJECT/bandwidth.ini"
+        ]
+     },
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "bandwidth", 
+                    "location": "src/kernel.cpp",
+                    "clflags": "--config PROJECT/bandwidth.ini"
+                }
+            ], 
+            "name": "krnl_kernel_global"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/krnl_kernel_global.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "config_make": "config.mk", 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ], 
+    "testinfo": {
+        "level_up": [
+            {
+                "hw": "1"
+            }
+        ],
+        "disable": false,
+        "jobs": [
+            {
+                "index": 0,
+                "dependency": [],
+                "env": "",
+                "cmd": "",
+                "max_memory_MB": 32768,
+                "max_time_min": 300
+            }
+        ],
+        "targets": [
+            "vitis_sw_emu",
+            "vitis_hw_emu",
+            "vitis_hw"
+        ],
+        "category": "canary"
+    }
+}

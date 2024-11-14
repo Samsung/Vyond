@@ -1,0 +1,111 @@
+package "mutilate"
+version "0.1"
+usage "mutilate -s server[:port] [options]"
+description "\"High-performance\" memcached benchmarking tool"
+
+args "-c cc --show-required -C --default-optional -l"
+
+option "verbose" v "Verbosity. Repeat for more verbose." multiple
+option "quiet" - "Disable log messages."
+
+text "\nBasic options:"
+
+option "server" s "Memcached server hostname[:port].  \
+Repeat to specify multiple servers." string multiple
+option "binary" - "Use binary memcached protocol instead of ASCII."
+option "qps" q "Target aggregate QPS. 0 = peak QPS." int default="0"
+option "time" t "Maximum time to run (seconds)." int default="5"
+
+option "keysize" K "Length of memcached keys (distribution)."
+       string default="30"
+option "valuesize" V "Length of memcached values (distribution)."
+       string default="200"
+
+option "records" r "Number of memcached records to use.  \
+If multiple memcached servers are given, this number is divided \
+by the number of servers." int default="10000"
+
+option "update" u "Ratio of set:get commands." float default="0.0"
+
+text "\nAdvanced options:"
+
+option "username" U "Username to use for SASL authentication." string
+option "password" P "Password to use for SASL authentication." string
+option "threads" T "Number of threads to spawn." int default="1"
+option "affinity" - "Set CPU affinity for threads, round-robin"
+option "connections" c "Connections to establish per server." int default="1"
+option "depth" d "Maximum depth to pipeline requests." int default="1"
+option "roundrobin" R "Assign threads to servers in round-robin fashion.  \
+By default, each thread connects to every server."
+
+option "iadist" i "Inter-arrival distribution (distribution).  Note: \
+The distribution will automatically be adjusted to match the QPS given \
+by --qps." string default="exponential"
+option "skip" S "Skip transmissions if previous requests are late.  This \
+harms the long-term QPS average, but reduces spikes in QPS after \
+long latency requests."
+option "moderate" - "Enforce a minimum delay of ~1/lambda between requests."
+
+option "noload" - "Skip database loading."
+option "loadonly" - "Load database and then exit."
+
+option "blocking" B "Use blocking epoll().  May increase latency."
+option "no_nodelay" - "Don't use TCP_NODELAY."
+
+option "warmup" w "Warmup time before starting measurement." int
+option "wait" W "Time to wait after startup to start measurement." int
+option "save" - "Record latency samples to given file." string
+
+option "search" - "Search for the QPS where N-order statistic < Xus.  \
+(i.e. --search 95:1000 means find the QPS where 95% of requests are \
+faster than 1000us)." string typestr="N:X"
+option "scan" - "Scan latency across QPS rates from min to max."
+       string typestr="min:max:step"
+
+text "\nAgent-mode options:"
+option "agentmode" A "Run client in agent mode."
+option "agent" a "Enlist remote agent." string typestr="host" multiple
+option "agent_port" p "Agent port." string default="5556"
+option "lambda_mul" l "Lambda multiplier.  Increases share of \
+QPS for this client." int default="1"
+option "measure_connections" C "Master client connections per server, \
+overrides --connections." int
+option "measure_qps" Q "Explicitly set master client QPS, \
+spread across threads and connections." int
+option "measure_depth" D "Set master client connection depth." int
+
+text "
+The --measure_* options aid in taking latency measurements of the
+memcached server without incurring significant client-side queuing
+delay.  --measure_connections allows the master to override the
+--connections option.  --measure_depth allows the master to operate as
+an \"open-loop\" client while other agents continue as a regular
+closed-loop clients.  --measure_qps lets you modulate the QPS the
+master queries at independent of other clients.  This theoretically
+normalizes the baseline queuing delay you expect to see across a wide
+range of --qps values.
+"
+
+text "
+Some options take a 'distribution' as an argument.
+Distributions are specified by <distribution>[:<param1>[,...]].
+Parameters are not required.  The following distributions are supported:
+
+   [fixed:]<value>              Always generates <value>.
+   uniform:<max>                Uniform distribution between 0 and <max>.
+   normal:<mean>,<sd>           Normal distribution.
+   exponential:<lambda>         Exponential distribution.
+   pareto:<loc>,<scale>,<shape> Generalized Pareto distribution.
+   gev:<loc>,<scale>,<shape>    Generalized Extreme Value distribution.
+
+   To recreate the Facebook \"ETC\" request stream from [1], the
+   following hard-coded distributions are also provided:
+
+   fb_value   = a hard-coded discrete and GPareto PDF of value sizes
+   fb_key     = \"gev:30.7984,8.20449,0.078688\", key-size distribution
+   fb_ia      = \"pareto:0.0,16.0292,0.154971\", inter-arrival time dist.
+
+[1] Berk Atikoglu et al., Workload Analysis of a Large-Scale Key-Value Store,
+    SIGMETRICS 2012
+"
+

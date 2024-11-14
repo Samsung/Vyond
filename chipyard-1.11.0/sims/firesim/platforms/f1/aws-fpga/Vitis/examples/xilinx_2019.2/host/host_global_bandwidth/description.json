@@ -1,0 +1,68 @@
+{
+    "name": "Host Global Bandwidth", 
+    "description": [
+        "Host to global memory bandwidth test"
+    ],
+    "ndevice": [
+      	"u50",
+	"u280",
+	"samsung",
+	"zc"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "host_global", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "compute_units": [
+                        {
+                            "arguments": [
+                                {
+                                    "name": "buffer0", 
+                                    "memory": "DDR[0]"
+                                }, 
+                                {
+                                    "name": "buffer1", 
+                                    "memory": "DDR[1]"
+                                }
+                            ]
+                        }
+                    ], 
+                    "name": "bandwidth", 
+                    "location": "src/kernel.cpp"
+                }
+            ], 
+            "name": "krnl_host_global"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "BUILD/krnl_host_global.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "match_ini": "false", 
+    "output_files": "metric1.csv", 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ] 
+}

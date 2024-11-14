@@ -1,0 +1,86 @@
+{
+    "name": "Copy Buffer XRT (XRT native API's)", 
+    "description": [
+        "This Copy Buffer example demonstrate how one buffer can be copied from another buffer."
+    ],
+    "flow": "vitis",
+    "keywords": [
+        "copy"
+    ], 
+    "key_concepts": [
+        "Copy Buffer"
+    ], 
+    "platform_type": "pcie",
+    "platform_blacklist": [
+        "zc",
+        "vck",
+        "nodma"
+    ],
+    "runtime": [
+        "OpenCL"
+    ],
+    "os": [
+        "Linux"
+    ], 
+    "host": {
+        "host_exe": "copy_buffer_xrt",
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/cmdparser/cmdlineparser.cpp",
+                "REPO_DIR/common/includes/logger/logger.cpp",
+                "./src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/cmdparser",
+                "REPO_DIR/common/includes/logger"
+            ]
+        },
+        "linker" : {
+            "libraries" : ["uuid",
+                         "xrt_coreutil"
+                ]
+        }
+    },
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "vector_add", 
+                    "location": "src/vector_addition.cpp"
+                }
+            ], 
+            "name": "vector_addition"
+        }
+    ],
+    "launch": [
+        {
+            "cmd_args": "-x BUILD/vector_addition.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ],
+    "testinfo": {
+        "disable": false,
+        "jobs": [
+            {
+                "index": 0,
+                "dependency": [],
+                "env": "",
+                "cmd": "",
+                "max_memory_MB": 32768,
+                "max_time_min": 300
+            }
+        ],
+        "targets": [
+            "vitis_sw_emu",
+            "vitis_hw_emu",
+            "vitis_hw"
+        ],
+        "category": "canary"
+    }
+}

@@ -1,0 +1,43 @@
+{
+    "runtime": ["OpenCL"],
+    "example": "Convolve",
+    "overview": [
+        "The convolve example is a performant design which showcases convolutional image filtering. The example processes the image 8 pixels at a time."
+    ],
+    "opencv": true,
+    "host_exe": "convolve",
+    "host_srcs": "src/convolve.cpp",
+    "cmd_args": "BUILD/krnl_convolve.xclbin PROJECT/data/input_buffer_raw.txt PROJECT/data/filter_buffer_raw.txt PROJECT/data/output_buffer_raw.txt",
+    "output_files": "input.bmp output.bmp coef.bmp golden.bmp",        
+    "libs": [
+        "opencv", 
+        "xcl2"
+    ],
+    "containers": [
+    {
+        "name": "krnl_convolve", 
+        "accelerators": [
+        {
+            "name": "krnl_convolve", 
+            "location": "src/krnl_convolve.cl"
+        }
+      ]
+     }
+    ],
+    "perf_fields": ["Board", "Image Size", "Frames / Second"],
+    "performance": [
+        [
+            "xilinx:adm-pcie-7v3:1ddr", "1,024 x 1,024", "1,000"
+        ],
+        [
+            "xilinx:adm-pcie-ku3:2ddr-xpr", "1,024 x 1,024", "1,000"
+        ]
+
+    ],
+    "contributors": [
+        {
+            "group": "Xilinx",
+            "url": "http://www.xilinx.com"
+        }
+    ]
+}

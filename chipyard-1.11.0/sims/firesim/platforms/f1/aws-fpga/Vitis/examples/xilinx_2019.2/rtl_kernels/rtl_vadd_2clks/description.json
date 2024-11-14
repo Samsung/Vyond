@@ -1,0 +1,69 @@
+{
+    "name": "Vadd 2 Kernel Clocks (RTL)", 
+    "description": [
+        "This example shows vector addition with 2 kernel clocks using RTL Kernel."
+    ], 
+    "keywords": [
+	"kernel_frequency"
+    ], 
+    "key_concepts": [
+        "RTL Kernel", 
+        "Multiple Kernel Clocks"
+    ], 
+    "targets": [
+        "hw", 
+        "hw_emu"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "gui": false, 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2", 
+                "src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "kernel_type": "RTL", 
+                    "name": "vadd"
+                }
+            ], 
+            "name": "vadd",
+	    "ldclflags": "--config PROJECT/vadd.ini"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/vadd.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "config_make": "config.mk", 
+    "output_files": "tmp_kernel_pack* packaged_kernel*",
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ], 
+    "revision": [
+        {
+            "date": "JAN2017", 
+            "version": "1.0", 
+            "description": "Initial Xilinx Release"
+        }
+    ] 
+}

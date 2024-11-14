@@ -1,0 +1,9 @@
+*.swp
+*.dump
+target
+*.out
+lib
+*#
+*~
+.nfs*
+*.preprocessed.sv

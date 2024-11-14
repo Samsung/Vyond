@@ -1,0 +1,78 @@
+{
+    "ndevice": [
+        "zc", 
+	"zed",
+       	"u50",
+       	"samsung"
+    ], 
+    "description": [
+        "This example of 2ddr is to demonstrate how to use multiple ddr and create buffers in each DDR."
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/apply_watermark.xclbin PROJECT/data/input.bmp PROJECT/data/golden.bmp", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "output_files": "output.bmp", 
+    "host": {
+        "host_exe": "host", 
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2", 
+                "REPO_DIR/common/includes/bitmap"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2", 
+                "REPO_DIR/common/includes/bitmap"
+            ]
+        }
+    }, 
+    "key_concepts": [
+        "Multiple Banks"
+    ], 
+    "keywords": [
+        "max_memory_ports",
+        "sp",
+        "connectivity"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "max_memory_ports": "true", 
+                    "compute_units": [
+                        {
+                            "arguments": [
+                                {
+                                    "name": "input", 
+                                    "memory": "DDR[0]"
+                                }, 
+                                {
+                                    "name": "output", 
+                                    "memory": "DDR[1]"
+                                }
+                            ]
+                        }
+                    ], 
+                    "name": "apply_watermark", 
+                    "location": "src/apply_watermark.cpp"
+                }
+            ], 
+            "name": "apply_watermark"
+        }
+    ], 
+    "name": "Global Memory Two Banks (C)"
+}

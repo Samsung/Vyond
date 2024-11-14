@@ -1,0 +1,121 @@
+channels:
+    - conda-forge
+    - ucb-bar
+    - nodefaults
+
+# non-standard key used in conda-lock: https://github.com/conda-incubator/conda-lock#platform-specification
+platforms:
+    - linux-64
+
+dependencies:
+    # https://conda-forge.org/feedstock-outputs/
+    #   filterable list of all conda-forge packages
+    # https://conda-forge.org/#contribute
+    #   instructions on adding a recipe
+    # https://docs.conda.io/projects/conda/en/latest/user-guide/concepts/pkg-specs.html#package-match-specifications
+    #   documentation on package_spec syntax for constraining versions
+
+
+    # handy tool for introspecting package relationships and file ownership
+    # see https://github.com/rvalieris/conda-tree
+    - conda-tree
+
+    # bundle FireSim driver with deps into installer shell-script
+    - constructor
+
+    - gcc<13
+    - gxx<13
+    - sysroot_linux-64=2.17 # needed to match pre-built CI XRT glibc version
+    - conda-gcc-specs
+    - binutils
+
+    - riscv-tools==1.0.3 # from ucb-bar channel - https://github.com/ucb-bar/riscv-tools-feedstock
+
+    # firemarshal deps
+    - qemu # from ucb-bar channel - https://github.com/ucb-bar/qemu-feedstock
+    - rsync
+    - psutil
+    - doit>=0.34.0
+    - gitpython
+    - humanfriendly
+    - ctags
+    - bison
+    - flex
+    - expat
+    - python>=3.8
+    - bc
+    - sphinx
+    - sphinx_rtd_theme
+    - unzip
+    - patch
+    - which
+    - sed
+    - diffutils
+    - bash
+    - gzip
+    - bzip2
+    - perl
+    - tar
+    - file
+    - wget
+    - findutils
+    - lzop
+
+    - make
+    - bash-completion
+    - sbt
+    - ca-certificates
+    - mosh
+    - gmp
+    - mpfr
+    - mpc
+    - zlib
+    - vim
+    - git
+    - openjdk==20
+    - gengetopt
+    - libffi
+    - expat
+    - libusb1
+    - ncurses
+    - cmake
+    - graphviz
+    - expect
+    - dtc
+    - verilator==5.008
+    - screen
+    - elfutils
+    - libdwarf-dev==0.0.0.20190110_28_ga81397fc4 # from ucb-bar channel - using mainline libdwarf-feedstock
+    - conda-lock=1.4
+    - autoconf
+    - jq
+
+    # clang-format for driver coding style enforcement.
+    - clang-format
+    - clang-tools
+
+    # python packages
+    # While it is possible to install using pip after creating the
+    # conda environment, pip's dependency resolution can conflict with
+    # conda and create broken environments.  It's best to use the conda
+    # packages so that the environment is consistent
+    - colorama
+    - argcomplete
+    - python-graphviz
+    - pyparsing
+    - numpy
+    - kiwisolver
+    - matplotlib-base
+    - pandas
+    - awscli
+    - pytest
+    - pytest-dependency
+    - pytest-mock
+    - moto
+    - mypy
+    - s3fs==0.4.2
+    - aiohttp
+    - pip
+    - pip:
+        - sure
+        - pylddwrap

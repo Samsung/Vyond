@@ -1,0 +1,89 @@
+{
+    "name": "Port Width Widening", 
+    "description": [
+        "This example shows how HLS introduces the capability of resizing the port width of the kernel interface ports for better resource utilization maintaining the performance."
+    ],
+    "flow": "vitis",
+    "keywords": [
+        "m_axi_max_widen_bitwidth "         
+    ], 
+    "key_concepts": [
+        "Interface port width auto widening"
+    ], 
+    "contributors": [
+        {
+            "group": "Xilinx"
+        }
+    ], 
+    "os": [
+        "Linux"
+    ], 
+    "runtime": [
+        "OpenCL"
+    ], 
+    "host": {
+        "host_exe": "port_width_widening",
+        "compiler": {
+            "sources": [
+                "REPO_DIR/common/includes/xcl2/xcl2.cpp",
+                "./src/host.cpp"
+            ], 
+            "includepaths": [
+                "REPO_DIR/common/includes/xcl2"
+            ]
+        }
+    }, 
+    "v++": {
+        "build_datafiles" : [            
+            "PROJECT/hls_config.tcl",
+            "PROJECT/krnl_port_widen.ini"
+        ]
+     },
+    "containers": [
+        {
+            "accelerators": [
+                {
+                    "name": "krnl_base", 
+                    "location": "src/krnl_base.cpp"
+                },
+                {
+                    "name": "krnl_widen",
+                    "clflags": "--config krnl_port_widen.ini", 
+                    "location": "src/krnl_widen.cpp"
+                }
+            ], 
+            "name": "krnl_port_widen"
+        }
+    ], 
+    "launch": [
+        {
+            "cmd_args": "BUILD/krnl_port_widen.xclbin", 
+            "name": "generic launch for all flows"
+        }
+    ], 
+    "contributors": [
+        {
+            "url": "http://www.xilinx.com", 
+            "group": "Xilinx"
+        }
+    ],
+    "testinfo": {
+        "disable": false,
+        "jobs": [
+            {
+                "index": 0,
+                "dependency": [],
+                "env": "",
+                "cmd": "",
+                "max_memory_MB": 32768,
+                "max_time_min": 300
+            }
+        ],
+        "targets": [
+            "vitis_sw_emu",
+            "vitis_hw_emu",
+            "vitis_hw"
+        ],
+        "category": "canary"
+    }
+}
