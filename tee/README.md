@@ -30,13 +30,6 @@ cd $VYOND_ROOT/tee/sbi
 ```
 
 ### Run Vyond-TEE on QEMU
-Before executing Vyond-TEE, unzip the compressed files in `prebuilt` directory.
-
-```sh
-tar xzvf qemu-system-riscv64.tar.gz
-tar xzvf rootfs.ext2.tar.gz
-```
-
 ```sh
 cd $VYOND_ROOT/tee
 ./run.sh
