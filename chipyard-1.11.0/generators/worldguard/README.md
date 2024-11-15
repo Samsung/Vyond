@@ -1,5 +1,5 @@
 # WorldGuard on Chipyard
-This repository implements [WorldGuard](https://sifive.cdn.prismic.io/sifive/31b03c05-70fa-4dd8-bb06-127fdb4ba85a_WorldGuard-Technical-Paper_v2.4.pdf) of SiFive on top of [Chipyard](../../README.md) SoC generator.
+This repository implements [WorldGuard](https://sifive.cdn.prismic.io/sifive/31b03c05-70fa-4dd8-bb06-127fdb4ba85a_WorldGuard-Technical-Paper_v2.4.pdf) of SiFive on top of [Chipyard](../../README.CHIPYARD.md) SoC generator.
 The goal of this work is to implement an independent and configurable worldguard generator so that it can work with almost any other generators.
 
 It is NOT A SELF-RUNNING repository. To instantiate a WorldGuard, please use the customized [Chipyard](../../README.md) in this repository.
