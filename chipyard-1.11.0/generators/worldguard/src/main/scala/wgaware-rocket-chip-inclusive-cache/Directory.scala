@@ -180,7 +180,8 @@ class WGDirectory(params: InclusiveCacheParameters, widBits: Int) extends Module
   // replacement of mismatched wid
   //io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(setQuash && (tagMatch || wayMatch), bypass.data, Mux1H(victimWayOH, ways)))
   //io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(onlyTagHit, Mux1H(onlyTagHits, ways), Mux(setQuash && (tagMatch || wayMatch), bypass.data, Mux1H(victimWayOH, ways))))
-  io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(onlyTagHit, Mux1H(onlyTagHits, ways), Mux( bypassHit || bypassOnlyTagHit || wayMatch, bypass.data, Mux1H(victimWayOH, ways))))
+  //io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(onlyTagHit, Mux1H(onlyTagHits, ways), Mux( bypassHit || bypassOnlyTagHit || wayMatch, bypass.data, Mux1H(victimWayOH, ways))))
+  io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(onlyTagHit, Mux1H(onlyTagHits, ways), Mux( setQuash && ((tagMatch && bypass.wid === wid) || tagMatch || wayMatch), bypass.data, Mux1H(victimWayOH, ways))))  // Rewrite the above logic to avoid timing violation.
 
 
   //io.result.bits.hit := hit || (setQuash && tagMatch && bypass.data.state =/= INVALID)
