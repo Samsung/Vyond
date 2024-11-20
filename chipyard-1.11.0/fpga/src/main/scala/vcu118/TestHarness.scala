@@ -19,6 +19,8 @@ import sifive.blocks.devices.spi.{PeripherySPIKey, SPIPortIO}
 
 import chipyard._
 import chipyard.harness._
+import chipyard.iobinders.{JTAGChipIO}
+
 
 class VCU118FPGATestHarness(override implicit val p: Parameters) extends VCU118ShellBasicOverlays {
 
@@ -123,6 +125,8 @@ class VCU118FPGATestHarnessImp(_outer: VCU118FPGATestHarness) extends LazyRawMod
 
   childClock := referenceClock
   childReset := referenceReset
+
+  val jtag = IO(new JTAGChipIO()).suggestName("jtag")
 
   instantiateChipTops()
 }
