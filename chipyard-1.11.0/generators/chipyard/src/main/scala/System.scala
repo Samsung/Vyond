@@ -6,6 +6,7 @@
 package chipyard
 
 import chisel3._
+import chisel3.util._
 
 import org.chipsalliance.cde.config.{Parameters, Field}
 import freechips.rocketchip.subsystem._
@@ -92,12 +93,24 @@ trait CanHaveMasterTLMemPort { this: BaseSubsystem =>
          beatBytes = memPortParams.beatBytes)
    }
  }).toList.flatten)
+      val wgcParams = WGCheckerParams(
+        postfix = s"wgp_memport_",
+        mwid      = p(NWorlds) - 1,
+        widWidth  = log2Ceil(p(NWorlds)),
+        nSlots    = 8,
+        address   = 0x2060000 /*base*/ + 0x10000,
+        size      = 4096,
+        lgMaxSize = 6,
+        granularity = 64,
+        lgAlign = 6)
+      val wgc = WGCheckerAttachParams(wgcParams).attachTo(this)
 
  mbus.coupleTo(s"memory_controller_port_named_$portName") {
    (memTLNode
      :*= TLBuffer()
      :*= TLSourceShrinker(1 << idBits)
      :*= TLWidthWidget(mbus.beatBytes)
+     :*= wgc.wgc_node
      :*= _)
   }
 
