@@ -28,6 +28,11 @@ ifdef FW_TEXT_START
 firmware-genflags-y += -DFW_TEXT_START=$(FW_TEXT_START)
 endif
 
+ifeq ($(VY_PLATFORM),wgrocket)
+$(info danguria FW_FDT_PATH ${FW_FDT_PATH})
+FW_FDT_PATH=/home/sk84kim/workspace/vyond-public/WGRocketVCU118.dtb
+endif
+
 ifdef FW_FDT_PATH
 firmware-genflags-y += -DFW_FDT_PATH=\"$(FW_FDT_PATH)\"
 ifdef FW_FDT_PADDING
@@ -47,9 +52,11 @@ endif
 
 firmware-bins-$(FW_PAYLOAD) += fw_payload.bin
 ifdef FW_PAYLOAD_PATH
+$(info danguria FW_PAYLOAD_PATH ${FW_PAYLOAD_PATH})
 FW_PAYLOAD_PATH_FINAL=$(FW_PAYLOAD_PATH)
 else
 FW_PAYLOAD_PATH_FINAL=$(platform_build_dir)/firmware/payloads/test.bin
+$(info danguria FW_PAYLOAD_PATH_FINAL ${FW_PAYLOAD_PATH_FINAL})
 endif
 firmware-genflags-$(FW_PAYLOAD) += -DFW_PAYLOAD_PATH=\"$(FW_PAYLOAD_PATH_FINAL)\"
 ifdef FW_PAYLOAD_OFFSET

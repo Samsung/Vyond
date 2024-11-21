@@ -1,5 +1,9 @@
 #!/bin/bash
 
+if [ -z "${CROSS_COMPILE}" ]; then
+    echo "Error: CROSS_COMPILE is not set"
+    exit 1
+fi
 # set environments (dir path...)
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
@@ -13,7 +17,8 @@ ISA="rv${BITS}gc"
 ABI="lp64d"
 #CROSS_COMPILE= $YOUR_LOCATION
 
-PLATFORM="generic"
+VY_PLATFORM="wgrocket" #"generic"
+FW_PAYLOAD_PATH="/home/sk84kim/workspace/vyond-public/Image"
 
 SBI_SRC_DIR="$ROOT_DIR/sbi"
 
@@ -26,6 +31,10 @@ echo $SM_SRC_DIR
 rm -rf opensbi/build
 #make -C opensbi O=build PLATFORM_DIR="$SM_SRC_DIR"/plat/$PLATFORM FW_PIC=n CROSS_COMPILE=riscv$BITS-unknown-elf- \
 #    FW_PAYLOAD=y LATFORM_RISCV_XLEN=$BITS PLATFORM_RISCV_ISA=$ISA PLATFORM_RISCV_ABI=$ABI
-make -C opensbi O=build PLATFORM_DIR="$SBI_SRC_DIR"/plat/$PLATFORM FW_PIC=n \
+
+
+make -C opensbi O=build PLATFORM_DIR="$SBI_SRC_DIR"/plat/generic FW_PIC=n \
     FW_PAYLOAD=y LATFORM_RISCV_XLEN=$BITS PLATFORM_RISCV_ISA=$ISA PLATFORM_RISCV_ABI=$ABI\
-    CROSS_COMPILE=$CROSS_COMPILE
+    CROSS_COMPILE=$CROSS_COMPILE \
+    FW_PAYLOAD_PATH=$FW_PAYLOAD_PATH \
+    VY_PLATFORM=$VY_PLATFORM

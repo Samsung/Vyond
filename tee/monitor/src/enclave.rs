@@ -6,7 +6,7 @@ use crate::thread;
 use crate::trap::TrapFrame;
 use crate::Error;
 
-use semihosting::{heprintln, hprintln};
+//use semihosting::{heprintln, hprintln};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum State {
@@ -47,7 +47,7 @@ impl Enclave {
     pub fn allocate<'a>() -> Result<&'a mut Enclave, Error> {
         for eid in 0..MAX_ENCLAVES {
             if unsafe { ENCLAVES[eid].is_none() } {
-                hprintln!("Found enclave: {}", eid);
+                //hprintln!("Found enclave: {}", eid);
                 unsafe { ENCLAVES[eid] = Some(Enclave::new(eid)) };
                 return Ok(unsafe { ENCLAVES[eid].as_mut().unwrap() });
             }
@@ -87,11 +87,11 @@ impl Enclave {
         thread.swap_prev_mepc(regs, regs.mepc);
         thread.swap_prev_mstatus(regs, regs.mstatus);
 
-        hprintln!(
-            "to-enclave: mepc: {:#x}, mhstatus: {:#x}",
-            regs.mepc,
-            regs.mstatus
-        );
+        //hprintln!(
+        //    "to-enclave: mepc: {:#x}, mhstatus: {:#x}",
+        //    regs.mepc,
+        //    regs.mstatus
+        //);
 
         let interrupts = 0;
         csr_write!(mideleg, interrupts);
@@ -129,11 +129,11 @@ impl Enclave {
         thread.swap_prev_mepc(regs, regs.mepc);
         thread.swap_prev_mstatus(regs, regs.mstatus);
 
-        hprintln!(
-            "to-host: mepc: {:#x}, mhstatus: {:#x}",
-            regs.mepc,
-            regs.mstatus
-        );
+        //hprintln!(
+        //    "to-host: mepc: {:#x}, mhstatus: {:#x}",
+        //    regs.mepc,
+        //    regs.mstatus
+        //);
 
         //switch_vector_host();
 
@@ -175,7 +175,7 @@ pub fn create_enclave<'a>(base: usize, size: usize, entry: usize) -> Result<&'a 
 
     // create a PMP region bound to the enclave
     if let Ok(region) = pmp::pmp_region_init(base, size, pmp::Priority::Any, false) {
-        hprintln!("Found unused pmp slot: {}", region);
+        //hprintln!("Found unused pmp slot: {}", region);
         enclave.regions[0] = Some(Region { id: region });
 
         enclave.threads[0] = Some(thread::State::new(
@@ -186,7 +186,7 @@ pub fn create_enclave<'a>(base: usize, size: usize, entry: usize) -> Result<&'a 
         return Ok(enclave);
     }
 
-    heprintln!("No pmp slot found");
+    //heprintln!("No pmp slot found");
 
     Err(Error::NoFreeResource)
 }

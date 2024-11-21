@@ -72,6 +72,7 @@ int vyond_monitor_init(int cold_boot)
     if (ret != 0) {
         return ret;
     }
+    sbi_printf("Finished Initializing vyond monitor\n");
 
     sbi_ecall_register_extension(&ecall_vyond_monitor);
 

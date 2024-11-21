@@ -6,7 +6,7 @@ use core::sync::atomic::Ordering;
 
 use once_cell::OnceCell;
 
-use semihosting::{heprintln, hprintln};
+//use semihosting::{heprintln, hprintln};
 
 #[macro_use]
 pub mod cpu;
@@ -88,21 +88,21 @@ pub fn osm_init<'a>() -> Result<usize, Error> {
 pub extern "C" fn sm_init(cold_boot: bool) -> isize {
     let hartid = csr_read!(mhartid);
 
-    hprintln!("Initializing ... hart {:#x}\n", hartid);
+    //hprintln!("Initializing ... hart {:#x}\n", hartid);
 
     // initialize SMM
     if cold_boot {
         if let Ok(region) = smm_init() {
             SM_REGION_ID.set(region);
         } else {
-            heprintln!("Intolerable error - failed to initialize SM memory");
+            //heprintln!("Intolerable error - failed to initialize SM memory");
             return -1;
         }
 
         if let Ok(region) = osm_init() {
             OS_REGION_ID.set(region);
         } else {
-            heprintln!("Inrolerable error - failed to initialize OS memory");
+            //heprintln!("Inrolerable error - failed to initialize OS memory");
             return -1;
         }
 
@@ -120,10 +120,10 @@ pub extern "C" fn sm_init(cold_boot: bool) -> isize {
     let _ = pmp::set_keystone(sm_region_id(), pmp::PMP_NO_PERM);
     let _ = pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM);
 
-    hprintln!(
-        "Vyond security monitor has been initialized on hart-#{:#x}!\n",
-        hartid
-    );
+    //hprintln!(
+    //    "Vyond security monitor has been initialized on hart-#{:#x}!\n",
+    //    hartid
+    //);
 
     0
 }
