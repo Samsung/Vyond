@@ -1,35 +1,41 @@
+
 /**
- * This test checks if read after write a cache line with unauthorized wid. 
- * The WGChecker is configured not to raise neither interrupt nor bus error exception so as to
- * demonstrate the undefined behavior of cache controller.
- * Although WorldGuard specification does not define this case, this case must be handled otherwise this could be a security whole.
- * We suggest to enable interrupt or bus error so that security monitor take an action immediately.
- *
- * Author: Sungkeun Kim (sk84.kim@samsung.com)
+* This test checks if WorldGuard implementation in cache hierarchy evict the cache line 
+* if wid in metadata of matched cache line and wid in the request are different.
+* In the test, it refille the lines with wid 3 then tries to access them with other wids without permissions.
+*
+* Author: Sungkeun Kim (sk84.kim@samsung.com)
 */
 #include <stdio.h>
 #include <riscv-pk/encoding.h>
 
-#include <common/include/csr.h>
-#include <common/include/init.h>
-#include <common/include/wgcore.h>
-#include <common/include/wgmarker.h>
-#include <common/include/wgchecker.h>
-#include <platform/include/platform.h>
+#include <common/csr.h>
+#include <common/init.h>
+#include <common/wgcore.h>
+#include <common/wgmarker.h>
+#include <common/wgchecker.h>
+#include <platform/platform.h>
 
 
-
-void raw_cacheline()
+void fill_cacheline1(uint8_t* parr)
 {
-  SET_CSR(WG_CSR_MLWID, 3);
+  write_csr(0x391, 3);
+  for (int cl = 0; cl < 4; cl++)
+      for (int i = 0; i < SZ_CL; i++)
+        *(parr + SZ_CL * cl + i) = i + 1;
+}
+
+void read_unauthorized_cacheline1()
+{
+  write_csr(0x391, 3);
   printf("---------------------------------------------\n");
   printf("Testing with CFG TOR ..\n");
   uint8_t arr[10 * SZ_CL];  // allocate more than 4 cache lines
   uint8_t* parr = (uint8_t*)(((uint64_t)arr & ~0x3f) + SZ_CL);  // find address of the first (or maybe the second) cacheline.
-  uint64_t lgAlign = LOG_ALIGN_CACHE; // cache line aligned
+  uint64_t lgAlign = 6; // cache line aligned
   printf("arr: %p parr: %p\n", arr, parr);
   //----------------------------------------------------------------------------
-  // No. | Addr         | CFG   | PERM(WR)| Description
+  // No. | Addr         | CFG   | PERM    | Description
   //----------------------------------------------------------------------------
   // 0   | 0x8000.0000  | 0x0   | 0xc0    | n/a
   // 1   | parr         | 0x301 | 0xff    | 0x80000000 <= y < parr
@@ -57,26 +63,15 @@ void raw_cacheline()
   wgc_print_slot_reg(WGC_MEMORY_BASE, 4);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 5);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 6);
+  
 
   for (int cl = 0; cl < 4; cl++) {
-    for (int wid = 0; wid < 4; wid++) {
-      SET_CSR(WG_CSR_MLWID, 3);
-      printf("[line%d] read/write with wid %d\n", cl, wid);
-      for (int i = 0; i < SZ_CL; i++) *(parr + SZ_CL * cl + i) = i + 1;
+    fill_cacheline1(parr);
+    for (int wid = 0; wid < 3; wid++) {
+      write_csr(0x391, wid);
+      printf("[wid%d][line%d] read lines\n", wid, cl);
       for (int i = 0; i < SZ_CL; i++) printf("%d ", *(parr + SZ_CL * cl + i));
       printf("\n");
     }
   }
-}
-
-int main()
-{
-  printf("---------------------------------------------\n");
-  printf("Start Testing Read After Write Cachelines (demonstrating undefined cache behavior)...\n");
-  init_worldguard();
-  wgcore_print_regs();
-
-  raw_cacheline();
-  
-  return 0;
 }

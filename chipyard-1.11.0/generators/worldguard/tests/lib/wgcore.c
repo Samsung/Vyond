@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <riscv-pk/encoding.h>
 
-#include <common/include/csr.h>
-#include <common/include/init.h>
-#include <common/include/wgcore.h>
-#include <common/include/wgmarker.h>
-#include <common/include/wgchecker.h>
-#include <platform/include/platform.h>
+#include <common/csr.h>
+#include <common/init.h>
+#include <common/wgcore.h>
+#include <common/wgmarker.h>
+#include <common/wgchecker.h>
+#include <platform/platform.h>
 
 
 

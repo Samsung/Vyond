@@ -7,14 +7,14 @@
 #include <stdio.h>
 #include <riscv-pk/encoding.h>
 
-#include <common/include/csr.h>
-#include <common/include/init.h>
-#include <common/include/wgcore.h>
-#include <common/include/wgmarker.h>
-#include <common/include/wgchecker.h>
-#include <platform/include/platform.h>
+#include <common/csr.h>
+#include <common/init.h>
+#include <common/wgcore.h>
+#include <common/wgmarker.h>
+#include <common/wgchecker.h>
+#include <platform/platform.h>
 
-void fill_cacheline(uint8_t* parr)
+void fill_cacheline2(uint8_t* parr)
 {
   write_csr(0x391, 3);
   for (int cl = 0; cl < 4; cl++)
@@ -63,7 +63,7 @@ void read_unauthorized_cacheline2()
   
 
   for (int wid = 0; wid < 3; wid++) {
-    fill_cacheline(parr);
+    fill_cacheline2(parr);
     write_csr(0x391, wid);
     for (int cl = 0; cl < 4; cl++) {
       printf("[wid%d][line%d] read lines\n", wid, cl);
@@ -71,17 +71,4 @@ void read_unauthorized_cacheline2()
       printf("\n");
     }
   }
-}
-
-
-int main()
-{
-  printf("---------------------------------------------\n");
-  printf("Start Testing WorldGuard Read unauthorized cache line (check eviction due to wid miss match)...\n");
-  init_worldguard();
-  wgcore_print_regs();
-
-  read_unauthorized_cacheline2();
-  
-  return 0;
 }

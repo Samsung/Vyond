@@ -1,7 +1,7 @@
 
-#include <common/include/wgmarker.h>
-#include <platform/include/platform.h>
-#include <common/include/mmio.h>
+#include <common/wgmarker.h>
+#include <platform/platform.h>
+#include <common/mmio.h>
 
 //--------------------------------------------------------------------------------------------------
 // Functions for WGMarker

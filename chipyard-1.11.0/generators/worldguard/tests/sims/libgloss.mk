@@ -20,7 +20,7 @@ BUILD_LIBGLOSS ?= $(shell { echo 'int main(void) { return 0; }' | \
 ifneq ($(BUILD_LIBGLOSS),)
 $(info libgloss-htif: Using local build)
 
-libgloss_srcdir := ../../../../../toolchains/libgloss
+libgloss_srcdir := ../../../../toolchains/libgloss
 libgloss_builddir := libgloss
 libgloss_specs := $(libgloss_srcdir)/util/$(libgloss_specs)
 libgloss_lib := $(libgloss_builddir)/libgloss_htif.a

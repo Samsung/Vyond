@@ -1,17 +1,34 @@
 # WorldGuard Test
-The basic test environments are adopted from the [Chipyard Tests](../../../tests). 
-Test programs run on the chipyard simulation (e.g., verilator) using [libgloss-htif](https://github.com/ucb-bar/libgloss-htif/tree/39234a16247ab1fa234821b251f1f1870c3de343) which is a minimal system calls.
+The basic test environments are adopted from the [Chipyard Tests](../../../tests) for the simulation and [sdboot](../../../fpga/src/main/resources/vcu118/sdboot) for a baremetal on FPGA, respectively. 
+Test programs run on the chipyard simulation (e.g., verilator) using [libgloss-htif](https://github.com/ucb-bar/libgloss-htif/tree/39234a16247ab1fa234821b251f1f1870c3de343) which is a minimal system calls and on VCU118 FPGA board as a baremetal.
+To run test programs, we assume that you have setup chipyard development environment by running `./build-setup.sh` and source `env.sh`.
 
-# Build Test Programs
-We assume that you have setup chipyard development environment by running `./build-setup.sh` and source `env.sh`.
+# Run Test Programs on Simulation
+## Build Test Programs
 ```sh
-cd ${CHIPYARD_ROOT}/generators/worldguard/tests/sims/src
+cd ${CHIPYARD_ROOT}/generators/worldguard/tests/sims
 make  # build all test programs
 ```
 
-# Running Test Programs
+## Running Test Programs
 
 As test programs run on the simulation, first you need to build a one design of chipyard configuration. The following example builde WGRocketConfig in debug mode and run the `read_unauthorized_cacheline1.riscv.
+```sh
+# Enter Verilator directory
+cd ${CHIPYARD_ROOT}/sims/verilator
+make CONFIG=WGRocketConfig run-binary-debug BINARY=../../generators/worldguard/tests/sims/src/read_unauthorized_cacheline1.riscv
+```
+
+# Run Test Programs on VCU118 FPGA
+## Build A Test Program with baremetal firmware
+```sh
+cd ${CHIPYARD_ROOT}/generators/worldguard/tests/fpga/vcu118
+make  # build all test programs
+```
+After the build, you can see `baremetal.elf`, `baremetal.bin`, and `baremetal.asm` as outputs.
+
+## Running Test Programs
+We assume that you have built a bitstream of WG-Aware Rocket SoC. See [Generate a Bitstream for VCU118 FPGA](https://github.com/Samsung/Vyond/blob/main/chipyard-1.11.0/generators/worldguard/README.md#generate-a-bitstream-for-vcu118-fpga).
 ```sh
 # Enter Verilator directory
 cd ${CHIPYARD_ROOT}/sims/verilator

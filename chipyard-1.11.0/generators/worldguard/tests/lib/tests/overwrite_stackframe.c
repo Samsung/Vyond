@@ -13,13 +13,13 @@
 #include <stdio.h>
 #include <riscv-pk/encoding.h>
 
-#include <common/include/csr.h>
-#include <common/include/mmio.h>
-#include <common/include/init.h>
-#include <common/include/wgcore.h>
-#include <common/include/wgmarker.h>
-#include <common/include/wgchecker.h>
-#include <platform/include/platform.h>
+#include <common/csr.h>
+#include <common/mmio.h>
+#include <common/init.h>
+#include <common/wgcore.h>
+#include <common/wgmarker.h>
+#include <common/wgchecker.h>
+#include <platform/platform.h>
 
 void overwrite_stackframe()
 {
@@ -69,17 +69,4 @@ void overwrite_stackframe()
   write_csr(0x391, 1);   // <-- overwrite variables on the same cacheline (potentially return address) with zero values!!!
   printf("[wid%ld] val = %d\n", read_csr(0x391), val);
   // won't be able to return to caller if the return address is zeroed-out.
-}
-
-
-int main()
-{
-  printf("---------------------------------------------\n");
-  printf("WorldGuard Test - overwrite stackframe\n");
-  init_worldguard();
-  //wgcore_print_regs();
-
-  overwrite_stackframe();
-  
-  return 0;
 }
