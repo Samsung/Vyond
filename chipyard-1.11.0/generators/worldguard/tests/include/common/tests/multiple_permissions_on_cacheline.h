@@ -1,0 +1,5 @@
+#ifndef _MULTIPLE_PERMISSIONS_ON_CACHELINE_H_
+#define _MULTIPLE_PERMISSIONS_ON_CACHELINE_H_
+
+void multiple_permissions_on_cacheline();
+#endif

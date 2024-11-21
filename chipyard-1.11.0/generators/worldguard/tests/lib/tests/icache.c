@@ -5,16 +5,15 @@
 *
 * Author: Sungkeun Kim (sk84.kim@samsung.com)
 */
-
 #include <stdio.h>
-#include <riscv-pk/encoding.h>
 
-#include <common/include/csr.h>
-#include <common/include/init.h>
-#include <common/include/wgcore.h>
-#include <common/include/wgmarker.h>
-#include <common/include/wgchecker.h>
-#include <platform/include/platform.h>
+#include <riscv-pk/encoding.h>
+#include <common/wgcore.h>
+#include <common/wgmarker.h>
+#include <common/wgchecker.h>
+#include <common/wgchecker.h>
+#include <platform/platform.h>
+#include <common/csr.h>
 
 unsigned int gcd_ref(unsigned int x, unsigned int y) {
   while (y != 0) {
@@ -51,7 +50,7 @@ void config_wgchecker()
 
 void test_icache()
 {
-
+  config_wgchecker();
   for (int wid = 0; wid < 4; wid++) {
     write_csr(0x391, wid);
     printf("[wid%d] calling gcd_ref\n", wid);
@@ -59,14 +58,3 @@ void test_icache()
   }
 }
 
-
-int main()
-{
-  printf("---------------------------------------------\n");
-  printf("Start Testing WorldGuard...\n");
-  init_worldguard();
-  config_wgchecker();
-  test_icache();
-  
-  return 0;
-}

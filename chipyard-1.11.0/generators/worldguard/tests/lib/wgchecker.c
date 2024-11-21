@@ -1,8 +1,8 @@
 
 #include <stdio.h>
-#include <common/include/mmio.h>
-#include <common/include/wgchecker.h>
-#include <platform/include/platform.h>
+#include <common/mmio.h>
+#include <common/wgchecker.h>
+#include <platform/platform.h>
 
 
 //--------------------------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 
-#include <common/include/init.h>
-#include <common/include/csr.h>
-#include <platform/include/platform.h>
+#include <common/init.h>
+#include <common/csr.h>
+#include <platform/platform.h>
 
 void init_worldguard(void)
 {
