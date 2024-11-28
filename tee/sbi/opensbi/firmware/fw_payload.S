@@ -89,28 +89,29 @@ fw_options:
 	.align 4
 	.globl payload_bin
 payload_bin:
-	li  a7, 0x08424b45
-	li  a6, 2001 /* create enclave */
-	li  a0, 0x12345000 /* [TBD] Partition base */
-	li  a1, 0x07654000 /* [TBD] Partition size */
-	li  a2, 0x80400010 /* Enclave entry */
-	ecall
-
-start_secos:
-	li  a7, 0x08424b45
-	li  a6, 2003
-	li  a0, 0x0        /* a0 : hartid */
-	li  a1, 0x82200000 /* a1 : dtb addr */
-	ecall
-
-start_linux:
-	li  a0, 0x0        /* a0 : hartid */
-	li  a1, 0x82200000 /* a1 : dtb addr */
-	li  ra, 0x84200000 /* ra : Linux kernel entry */ 
-	ret
-
-1:
-    j   1b
+# Disable sm test code
+#	li  a7, 0x08424b45
+#	li  a6, 2001 /* create enclave */
+#	li  a0, 0x12345000 /* [TBD] Partition base */
+#	li  a1, 0x07654000 /* [TBD] Partition size */
+#	li  a2, 0x80400010 /* Enclave entry */
+#	ecall
+#
+#start_secos:
+#	li  a7, 0x08424b45
+#	li  a6, 2003
+#	li  a0, 0x0        /* a0 : hartid */
+#	li  a1, 0x82200000 /* a1 : dtb addr */
+#	ecall
+#
+#start_linux:
+#	li  a0, 0x0        /* a0 : hartid */
+#	li  a1, 0x82200000 /* a1 : dtb addr */
+#	li  ra, 0x84200000 /* ra : Linux kernel entry */ 
+#	ret
+#
+#1:
+#    j   1b
 #ifndef FW_PAYLOAD_PATH
 	wfi
 	j	payload_bin
