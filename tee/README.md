@@ -39,8 +39,13 @@ cd $VYOND_ROOT/tee/sbi
 
 ### Run Vyond-TEE on QEMU
 ```sh
+# using run-vyond
+./run-vyond run-fw-on-qemu
+```
+```sh
+# using run.sh directly
 cd $VYOND_ROOT/tee
-./run.sh
+./run.sh -fw <fw_path> -qemu <wg-enabled qemu path>
 ```
 
 ### Run Vyond-TEE on Rocket SoC
