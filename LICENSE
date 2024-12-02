@@ -200,3 +200,20 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+
+   ## Third-Party Components
+   This project includes and uses third-party binaries, which are separately and are not covered by this project's license.
+   Below is a list of the third-party components, along with their respective licenses:
+
+1. **[QEMU System RISC-V](./prebuilt/qemu-system-riscv64)**
+   - **Description**: Prebuilt binary of `qemu-system-riscv64` with [a patch](https://protect2.fireeye.com/v1/url?k=50712fa1-0fea16be-5070a4ee-000babdfecba-aea25fe4d738f1c2&q=1&e=1f1f6d7f-bb89-4529-af70-f5845db3886c&u=https%3A%2F%2Fpatchwork.ozlabs.org%2Fproject%2Fqemu-devel%2Flist%2F%3Fseries%3D410513) to enable worldguard.
+   - **License**: GNU General Public License (GPL) version 2.
+   - **Source Code**: The source code is available at [https://www.qemu.org/](https://www.qemu.org/).
+   - **Note**: Redistribution and usage of QEMU binaries must comply with the GPLv2 license.
+
+2. **[Linux Kernel Image](./prebuilt/Image)**
+   - **Description**: Prebuilt binary of `Image`.
+   - **License**: GNU General Public License (GPL) version 2.
+   - **Source Code**: The source code is available at [https://www.kernel.org/](https://www.kernel.org/).
+   - **Note**: Redistribution and usage of QEMU binaries must comply with the GPLv2 license.
