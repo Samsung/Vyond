@@ -6,7 +6,12 @@ use core::sync::atomic::Ordering;
 
 use once_cell::OnceCell;
 
+#[cfg(feature = "semihosting")] 
 use semihosting::{heprintln, hprintln};
+#[cfg(not(feature = "semihosting"))]
+use core::ffi::c_char;
+#[cfg(not(feature = "semihosting"))]
+use crate::api::sbi_printf;
 
 #[macro_use]
 pub mod cpu;
@@ -88,21 +93,39 @@ pub fn osm_init<'a>() -> Result<usize, Error> {
 pub extern "C" fn sm_init(cold_boot: bool) -> isize {
     let hartid = csr_read!(mhartid);
 
-    hprintln!("Initializing ... hart {:#x}\n", hartid);
+    #[cfg(feature = "semihosting")] {
+        hprintln!("Initializing ... hart {:#x}\n", hartid);
+    }
+    #[cfg(not(feature = "semihosting"))] {
+        let format = b"Initializing ... hart %d\n\0".as_ptr().cast::<c_char>();
+        unsafe { sbi_printf(format, hartid); }
+    }
 
     // initialize SMM
     if cold_boot {
         if let Ok(region) = smm_init() {
             SM_REGION_ID.set(region);
         } else {
-            heprintln!("Intolerable error - failed to initialize SM memory");
+            #[cfg(feature = "semihosting")] {
+                heprintln!("Intolerable error - failed to initialize SM memory");
+            }
+            #[cfg(not(feature = "semihosting"))] {
+                let format = b"Intolerable error - failed to initialize SM memory 1\n\0".as_ptr().cast::<c_char>();
+                unsafe { sbi_printf(format); }
+            }
             return -1;
         }
 
         if let Ok(region) = osm_init() {
             OS_REGION_ID.set(region);
         } else {
-            heprintln!("Inrolerable error - failed to initialize OS memory");
+            #[cfg(feature = "semihosting")] {
+                heprintln!("Inrolerable error - failed to initialize OS memory");
+            }
+            #[cfg(not(feature = "semihosting"))] {
+                let format = b"Intolerable error - failed to initialize SM memory 2\n\0".as_ptr().cast::<c_char>();
+                unsafe { sbi_printf(format); }
+            }
             return -1;
         }
 
@@ -120,10 +143,16 @@ pub extern "C" fn sm_init(cold_boot: bool) -> isize {
     let _ = pmp::set_keystone(sm_region_id(), pmp::PMP_NO_PERM);
     let _ = pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM);
 
-    hprintln!(
-        "Vyond security monitor has been initialized on hart-#{:#x}!\n",
-        hartid
-    );
+    #[cfg(feature = "semihosting")] {
+        hprintln!(
+            "Vyond security monitor has been initialized on hart-#{:#x}!\n",
+            hartid
+        );
+    }
+    #[cfg(not(feature = "semihosting"))] {
+        let format = b"Vyond security monitor has been initialized on hart %d\n\0".as_ptr().cast::<c_char>();
+        unsafe { sbi_printf(format); }
+    }
 
     0
 }

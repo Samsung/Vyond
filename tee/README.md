@@ -16,21 +16,40 @@ Vyond-TEE currently run on `qemu-system-riscv64` and we will soon release a new 
 
 ### Build Vyond Security Monitor
 ```sh
+# using run-vyond
+./run-vyond build-sm --clean-build  # add --semihosting to enable. Note that rocket doesn't support semihosting.
+```
+```sh
+# using cargo directly
 cd $VYOND_ROOT/tee/monitor
-cargo build
+cargo build  # add --fetures semihosting to enable. Note that rocket doesn't support semihosting.
 ```
 
 ### Build Firmware (Opensbi + Security Monitor)
-
+```sh
+# using run-vyond
+./run-vyond build-fw --clean-build $VYOND_ROOT/prebuilt/Image
+```
 ```sh
 # Set CROSS_COMPILE environment variable 
 export CROSS_COMPILE=$YOUR_TOOLCHAIN/riscv64-unknown-elf-
 cd $VYOND_ROOT/tee/sbi
-./build.sh
+./build.sh $VYOND_ROOT/prebuilt/Image
 ```
 
 ### Run Vyond-TEE on QEMU
 ```sh
+# using run-vyond
+./run-vyond run-fw-on-qemu
+```
+```sh
+# using run.sh directly
 cd $VYOND_ROOT/tee
-./run.sh
+./run.sh -fw <fw_path> -qemu <wg-enabled qemu path>
+```
+
+### Run Vyond-TEE on Rocket SoC
+```sh
+# flash  the fw_payload.bin to sdcard
+./run-vyond flash-fw /dev/sdh  # replace /dev/sdh with your blockd device file of sdcard
 ```

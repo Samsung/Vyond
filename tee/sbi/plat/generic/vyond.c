@@ -72,6 +72,13 @@ int vyond_monitor_init(int cold_boot)
     if (ret != 0) {
         return ret;
     }
+    sbi_printf("Finished Initializing vyond monitor\n");
+
+    uint64_t mlwid = csr_read(0x390);
+    sbi_printf("mlwid : %#lx\n", mlwid);
+    csr_write(0x390, 2);
+    sbi_printf("mlwid : %#lx\n", csr_read(0x390));
+    csr_write(0x390, 3);
 
     sbi_ecall_register_extension(&ecall_vyond_monitor);
 

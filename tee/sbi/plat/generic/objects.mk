@@ -66,7 +66,12 @@ endif
 
 platform-objs-y += platform.o
 platform-objs-y += platform_override_modules.o
-carray-platform_override_modules-y += sifive_fu540
-platform-objs-y += sifive_fu540.o
+ifeq ($(PLATFORM), wgrocket)
+	carray-platform_override_modules-y += wgrocket
+	platform-objs-y += wgrocket.o
+else
+	carray-platform_override_modules-y += sifive_fu540
+	platform-objs-y += sifive_fu540.o
+endif
 platform-objs-y += vyond.o
 

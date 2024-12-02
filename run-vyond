@@ -1,0 +1,168 @@
+# See LICENSE for license details.
+
+# Vyond Commandline Interface
+# With this python program, you can build and run every combination of Rocket-Aware HW (e.g., Rocket SoC or QEMU)
+# and SW (e.g., Bare-metal or Security Monitor).
+# Although each component has its own small script to build and run, this CLI will show you every commands in one place.
+# Author: Sungkeun Kim (sk84.kim@samsung.com)
+
+#!/usr/bin/env python3
+import sys
+import os
+import os.path
+import argparse
+from typing import List
+
+progName = 'vyond'
+
+#####################################
+# Directory info
+#####################################
+root = f'{os.getcwd()}'
+chipyard_root = f'{root}/chipyard-1.11.0'
+tee_root = f'{root}/tee'
+sm_root = f'{tee_root}/monitor'
+fw_root = f'{tee_root}/sbi'
+
+def validate_absolute_path(path):
+    if not os.path.isabs(path):
+        raise argparse.ArgumentTypeError(f"'{path}' is not an absolute path.")
+    if not os.path.exists(path):
+        raise argparse.ArgumentTypeError(f"'{path}' does not exist.")
+    return path
+
+def buildWGRocketSim(args):
+    cmd = f'cd {chipyard_root}/sims/verilator; make CONFIG=WGRocketConfig'
+    if args.debug:
+        cmd = cmd + ' debug'
+    os.system(cmd)
+
+def runWGRocketSim(args):
+    runcmd = 'run-binary'
+    if args.debug:
+        runcmd = runcmd + '-debug'
+    cmd = f'cd {chipyard_root}/sims/verilator; make CONFIG=WGRocketConfig {runcmd} BINARY={args.program_path}'
+    os.system(cmd)
+
+def buildWGRocketFPGA(args):
+    cmd = f'cd {chipyard_root}/fpga; make SUB_PROJECT=wgvcu118  bitstream'
+    os.system(cmd)
+
+def buildSM(args):
+    if args.clean_build:
+        os.system(f'cd {sm_root}; cargo clean')
+
+    cmd = f'cd {sm_root}; cargo build'
+    if args.semihosting:
+        cmd = cmd + ' --features semihosting'
+    os.system(cmd)
+
+def buildFW(args):
+    libvyond = f'{sm_root}/target/riscv64gc-unknown-linux-gnu/debug/libvyond.a'
+    if not os.path.exists(libvyond):
+        print("sm does not exist. Build sm first.")
+        exit(1)
+
+    if args.clean_build:
+        cmd = f'cd {fw_root}; rm -rf opensbi/build; ./build.sh {args.payload_path}'
+    else:
+        cmd = f'cd {fw_root}; ./build.sh {args.payload_path}'
+    print(f'Running cmd: {cmd}')
+    os.system(cmd)
+
+def flashFWToSD(args):
+    cmd = f'sudo sgdisk --clear -g --set-alignment=34 --new=1:34:1048576 --new=2:1048594:0 --typecode=1:af0a --typecode=2:af00 {args.blk_dev_file} '
+    cmd = cmd + f' sudo dd if={args.fw_path} of=/dev/sdh1 status=progress oflag=sync bs=1M'
+    os.system(cmd)
+
+def runFWOnWGQemu(args):
+    cmd = f'cd {tee_root}; ./run.sh'
+    if args.debug:
+        cmd = cmd + ' -debug'
+    cmd = cmd + f' -fw {args.fw_path} -qemu {args.qemu}'
+    print(cmd)
+    os.system(cmd)
+
+
+def main(argv: List[str] = None):
+    if os.getenv('VYOND_ENV_SETUP') != 'YES':
+        print("Environment Variabls are not set. run 'source %s' first." % 'env.sh')
+        exit(1)
+
+    parser = argparse.ArgumentParser(
+        prog=progName,
+        description="Vyond Commandline Interface",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.set_defaults(func=lambda x: parser.print_help())
+
+    subparsers = parser.add_subparsers(title='commands')
+    #################################################################
+    # Sub command - Build WG-Aware Rocket RTL Simulation
+    #################################################################
+    parser_buildWGRocketSim = subparsers.add_parser('build-wgrocket-sim', help='Build WG-Aware Rocket RTL Simulation')
+    parser_buildWGRocketSim.add_argument('--debug', action='store_true', default=False, help="build with debugging symbol")
+    parser_buildWGRocketSim.set_defaults(func=buildWGRocketSim)
+    
+    #################################################################
+    # Sub command - Run WG-Aware Rocket RTL Simulation
+    #################################################################
+    parser_runWGRocketSim = subparsers.add_parser('run-wgrocket-sim', help='Run WG-Aware Rocket RTL Simulation')
+    parser_runWGRocketSim.add_argument('--debug', action='store_true', default=False, help="run with debugging symbol")
+    parser_runWGRocketSim.add_argument("program_path", type=validate_absolute_path, help="Absolute Program path to run")
+    parser_runWGRocketSim.set_defaults(func=runWGRocketSim)
+    
+    #################################################################
+    # Sub command - Build FPGA bitstream for WG-Aware Rocket
+    #################################################################
+    parser_buildWGRocketFPGA = subparsers.add_parser('build-wgrocket-fpga', help='Build a VCU118 FPGA bitstream for WG-Aware Rocket SoC.')
+    parser_buildWGRocketFPGA.set_defaults(func=buildWGRocketFPGA)
+    
+    #################################################################
+    # build sm
+    #################################################################
+    parser_buildSM = subparsers.add_parser('build-sm', help='Build Security Monitor')
+    parser_buildSM.add_argument("--semihosting", action='store_true', default=False, help="Enable semihosting. It doesn't work with Rocket SoC")
+    parser_buildSM.add_argument("--clean-build", action='store_true', default=False, help="Clean build")
+    parser_buildSM.set_defaults(func=buildSM)
+    
+    #################################################################
+    # build fw
+    #################################################################
+    parser_buildFW = subparsers.add_parser('build-fw', help='Build firmware payload')
+    parser_buildFW.add_argument("--clean-build", action='store_true', default=False, help="Clean build")
+    parser_buildFW.add_argument("payload_path", type=validate_absolute_path, help="firmware path")
+    parser_buildFW.set_defaults(func=buildFW)
+    
+    
+    #################################################################
+    # Sub command - Write a firmware to SDCard
+    #################################################################
+    parser_flashFWToSD = subparsers.add_parser('flash-fw', help='Write the firmware to sdcard')
+    parser_flashFWToSD.add_argument("blk_dev_file", type=validate_absolute_path, help="Block Device File for the SDCard")
+    parser_flashFWToSD.add_argument("--fw_path", type=str, default='./tee/sbi/opensbi/build/platform/generic/firmware/fw_payload.bin', help="Absolute Firmware path")
+    parser_flashFWToSD.set_defaults(func=flashFWToSD)
+    
+    #################################################################
+    # Sub command - Run FW on WG-Aware Qemu
+    #################################################################
+    parser_runFWOnWGQemu = subparsers.add_parser('run-fw-on-qemu', help='Run FW on WG-Aware qemu')
+    parser_runFWOnWGQemu.add_argument('--debug', action='store_true', default=False, help="run with gdb")
+    parser_runFWOnWGQemu.add_argument("--qemu", type=str, default='../prebuilt/qemu-system-riscv64', help="Absolute path to wg-aware qemu")
+    parser_runFWOnWGQemu.add_argument("--fw_path", type=str, default='./sbi/opensbi/build/platform/generic/firmware/fw_payload.bin', help="Absolute Firmware path")
+    parser_runFWOnWGQemu.set_defaults(func=runFWOnWGQemu)
+    
+    args = parser.parse_args()
+
+    #################################################################
+    # Create CLI class and call selected sub command.
+    #################################################################
+    try:
+        args = parser.parse_args(sys.argv[1:])
+        args.func(args)
+    except KeyboardInterrupt:
+        print(f"{argv}{os.linesep}")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    sys.exit(main())

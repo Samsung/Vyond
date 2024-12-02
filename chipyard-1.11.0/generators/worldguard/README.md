@@ -73,6 +73,11 @@ If the address match but the `WID` does not, then the line is evicted and the re
 ## Quick Start Guide
 ### Running test programs on RTL Simulation
 ```sh
+# using run-vyond CLI
+./run-vyond run-wgrocket-sim $VYOND_ROOT/chipyard-1.11.0/generators/worldguard/tests/sims/icache.riscv --debug
+```
+```sh
+# using Makefile directly
 cd $VYOND_ROOT/chipyard-1.11.0/sims/verilator
 make CONFIG=WGRocketConfig run-binary-debug BINARY=../../generators/worldguard/tests/sims/src/read_unauthorized_cacheline1.riscv
 ```
@@ -82,6 +87,10 @@ The chipyard v.1.11.0 employs the verilator v5.0.20 which has a issue with debug
 
 ### Generate a bitstream for VCU118 FPGA
 ```sh
+# using run-vyond CLI
+./run-vyond build-wgrocket-fpga
+```sh
+# using Makefile directly
 cd $VYOND_ROOT/chipyard-1.11.0/fpga
 make SUB_PROJECT=wgvcu118  bitstream
 ```
