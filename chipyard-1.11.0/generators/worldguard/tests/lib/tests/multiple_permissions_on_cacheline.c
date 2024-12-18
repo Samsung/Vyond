@@ -1,6 +1,7 @@
 /**
- * This test shows that if two memory regions (two array elements in this test) with different permission list on the same cache line,
- * an wid without permission could have access the unauthorized data. 
+ * This test shows that if WGC slots are configured such that 
+ * an wid is associated with two memory regions (two array elements in this test) with a different permission
+ * on the same cache line, the wid could have access the unauthorized data. 
  * As shown in this test, your memory regions with different permission slist must not be stored in the same cache line.
  * Simple way to achieve this is to align resions with cacheline.
  *
