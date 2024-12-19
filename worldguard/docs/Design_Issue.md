@@ -1,13 +1,3 @@
-Hi all,
-
-
-I'm Sungkeun Kim working at Samsung Research, Korea.
-
-
-We (our team) have implemented the WorldGuard (WG) on top of [Rocket SoC](https://github.com/ucb-bar/chipyard) and open-sourced on the github ([https://github.com/Samsung/Vyond).](https://github.com/Samsung/Vyond)
-During testing it, we've found a design issue on WG along with cache extension. We'd like to share it, get some feedback from security working group and finally contribute to WorldGuard specification.
-
-
 # 1. WorldGuard on Rocket SoC
 We first briefly introduce WorldGuard-aware Rocket RoC as shown in Figure 1.
 There are two Rocket Cores - one with WG-aware and the other core with no-WG-aware. WG Checkers are added in front of Memory Port for DRAM, BootROM, and PLIC.
