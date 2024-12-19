@@ -12,13 +12,13 @@ During testing it, we've found a design issue on WG along with cache extension. 
 We first briefly introduce WorldGuard-aware Rocket RoC as shown in Figure 1.
 There are two Rocket Cores - one with WG-aware and the other core with no-WG-aware. WG Checkers are added in front of Memory Port for DRAM, BootROM, and PLIC.
 
-![WorldGuard Overview](./docs/images/overview.png)
+![WorldGuard Overview](./images/overview.png)
                            Figure 1. WorldGuard on Rocket SoC
 
 
 We also extended L1/L2 Caches to store a world ID (WID) to each cache line. We exactly follows the description about "WG Impact on Caches" from [the WG technical paper.](https://sifive.cdn.prismic.io/sifive/31b03c05-70fa-4dd8-bb06-127fdb4ba85a_WorldGuard-Technical-Paper_v2.4.pdf)
 
-
+![quote](./images/wg_cache_ext.png)
 
 
 # 2. Issue Overview
@@ -32,6 +32,8 @@ It is possible for WG user to configure WG Checker so that small memory regions 
 As shown in Figure 2, we declare an array (arr) two elements whose size is 8 bytes and they are mapped to the same cache block (highlighted with blue).
 Then, we wid-1 (W1 for short) different access permission to those two elements. That is, wid-1 can read/write to arr[0] but it cannot read/write to arr[1] at all.
 Lastly, PoC (a test program) sends a request to write to arr[0]. As a result, Caches (both L1/L2) install 64-byte data including arr[0] and arr[1] in the cache block and store transaction wid (1) as well.
+
+![poc setting](./images/poc_setting.png)
 
 
                                                           <Figure 2. Proof-of-Concept Setting>
