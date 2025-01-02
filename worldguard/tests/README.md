@@ -22,7 +22,7 @@ make CONFIG=WGRocketConfig run-binary-debug BINARY=../../generators/worldguard/t
 # Run Test Programs on VCU118 FPGA
 ## Build A Test Program with baremetal firmware
 ```sh
-cd ${CHIPYARD_ROOT}/generators/worldguard/tests/fpga/vcu118
+cd ${CHIPYARD_ROOT}/generators/worldguard/tests/fpga-baremetal/vcu118
 make  # build all test programs
 ```
 After the build, you can see `baremetal.elf`, `baremetal.bin`, and `baremetal.asm` as outputs.
