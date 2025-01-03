@@ -19,7 +19,7 @@ progName = 'vyond'
 root = f'{os.getcwd()}'
 chipyard_root = f'{root}/chipyard-1.11.0'
 tee_root = f'{root}/tee'
-sm_root = f'{tee_root}/monitor'
+sm_root = f'{tee_root}/wg_sm'
 fw_root = f'{tee_root}/sbi'
 
 def validate_absolute_path(path):
