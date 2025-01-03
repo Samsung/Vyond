@@ -9,7 +9,7 @@ As of now, we open a Security Monitor (SM) of Vyond-TEE written in Rust and an i
 WorldGuard (`WG`) is one of physical-memory isolation techniques used in RISC-V. This scheme provides a mechanism to tag transactions with an identification of the initiating context called a world id (`WID`) and reject illegal transactions if WID does not have a permission.
 Vyond implements WorldGuard on top of Chipyard SoC generator framework so as to apply it to various RISC-V enabled SoC.
 
-See more details in [WorldGuard on Chipyard](./chipyard-1.11.0/generators/worldguard/README.md) and [Initial Chipyard Setting](./chipyard-1.11.0/README.md)
+See more details in [WorldGuard on Chipyard](./worldguard/README.md) and [Initial Chipyard Setting](./chipyard-1.11.0/README.md)
 
 ## Vyond-TEE
 Vyond provides an enclave as a protection domain isolated from the rest of the system, both in terms of its execution and its memory. 
