@@ -802,3 +802,11 @@ pub const SH_RD: usize = 7;
 pub const SH_RS1: usize = 15;
 pub const SH_RS2: usize = 20;
 pub const SH_RS2C: usize = 2;
+
+/// WorldGuard-Awre Core
+pub const MLWID: usize = 0x390;
+pub const SLWID: usize = 0x190;
+pub const MWIDDELEG: usize = 0x748;
+
+pub const WG_R: usize = 0x01;
+pub const WG_W: usize = 0x10;
