@@ -28,4 +28,4 @@ conda activate base
 ```
 
 ## Running WorldGuard on the Chipyard
-Please refer to WorldGuard's [README](./generators/worldguard/README.md)
+Please refer to WorldGuard's [README](../worldguard/README.md)
