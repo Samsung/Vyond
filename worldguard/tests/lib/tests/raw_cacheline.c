@@ -17,15 +17,28 @@
 #include <common/wgchecker.h>
 #include <platform/platform.h>
 
+#ifdef BARE_METAL
+#include "kprintf.h"
+#endif
+
 void raw_cacheline()
 {
   SET_CSR(WG_CSR_MLWID, 3);
+#ifdef BARE_METAL
+  kprintf("---------------------------------------------\n");
+  kprintf("Testing with CFG TOR ..\n");
+#else
   printf("---------------------------------------------\n");
   printf("Testing with CFG TOR ..\n");
+#endif
   uint8_t arr[10 * SZ_CL];  // allocate more than 4 cache lines
   uint8_t* parr = (uint8_t*)(((uint64_t)arr & ~0x3f) + SZ_CL);  // find address of the first (or maybe the second) cacheline.
   uint64_t lgAlign = LOG_ALIGN_CACHE; // cache line aligned
+#ifdef BARE_METAL
+  kprintf("arr: 0x%lx parr: 0x%lx\n", arr, parr);
+#else
   printf("arr: %p parr: %p\n", arr, parr);
+#endif
   //----------------------------------------------------------------------------
   // No. | Addr         | CFG   | PERM(WR)| Description
   //----------------------------------------------------------------------------
@@ -46,8 +59,13 @@ void raw_cacheline()
   config_wgc(6, WGC_MEMORY_BASE, MEMORY_TOP,                     0x301, 0xff, lgAlign);
   
 
+#ifdef BARE_METAL
+  kprintf("---------------------------------------------\n");
+  kprintf("After configure for WG_CHECKER\n");
+#else
   printf("---------------------------------------------\n");
   printf("After configure for WG_CHECKER\n");
+#endif
   wgc_print_slot_reg(WGC_MEMORY_BASE, 0);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 1);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 2);
@@ -59,10 +77,24 @@ void raw_cacheline()
   for (int cl = 0; cl < 4; cl++) {
     for (int wid = 0; wid < 4; wid++) {
       SET_CSR(WG_CSR_MLWID, 3);
+#ifdef BARE_METAL
+      kprintf("[line%d] read/write with wid %d\n", cl, wid);
+#else
       printf("[line%d] read/write with wid %d\n", cl, wid);
+#endif
       for (int i = 0; i < SZ_CL; i++) *(parr + SZ_CL * cl + i) = i + 1;
-      for (int i = 0; i < SZ_CL; i++) printf("%d ", *(parr + SZ_CL * cl + i));
+      for (int i = 0; i < SZ_CL; i++) {
+#ifdef BARE_METAL
+       kprintf("%d ", *(parr + SZ_CL * cl + i));
+#else
+       printf("%d ", *(parr + SZ_CL * cl + i));
+#endif
+      }
+#ifdef BARE_METAL
+      kprintf("\n");
+#else
       printf("\n");
+#endif
     }
   }
 }

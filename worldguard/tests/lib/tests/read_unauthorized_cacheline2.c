@@ -14,6 +14,10 @@
 #include <common/wgchecker.h>
 #include <platform/platform.h>
 
+#ifdef BARE_METAL
+#include "kprintf.h"
+#endif
+
 void fill_cacheline2(uint8_t* parr)
 {
   write_csr(0x391, 3);
@@ -25,12 +29,21 @@ void fill_cacheline2(uint8_t* parr)
 void read_unauthorized_cacheline2()
 {
   write_csr(0x391, 3);
+#ifdef BARE_METAL
+  kprintf("---------------------------------------------\n");
+  kprintf("Testing with CFG TOR ..\n");
+#else
   printf("---------------------------------------------\n");
   printf("Testing with CFG TOR ..\n");
+#endif
   uint8_t arr[10 * SZ_CL];  // allocate more than 4 cache lines
   uint8_t* parr = (uint8_t*)(((uint64_t)arr & ~0x3f) + SZ_CL);  // find address of the first (or maybe the second) cacheline.
   uint64_t lgAlign = 6; // cache line aligned
+#ifdef BARE_METAL
+  kprintf("arr: 0x%lx parr: 0x%lx\n", arr, parr);
+#else
   printf("arr: %p parr: %p\n", arr, parr);
+#endif
   //----------------------------------------------------------------------------
   // No. | Addr         | CFG   | PERM    | Description
   //----------------------------------------------------------------------------
@@ -51,8 +64,13 @@ void read_unauthorized_cacheline2()
   config_wgc(6, WGC_MEMORY_BASE, MEMORY_TOP,                     0x301, 0xff, lgAlign);
   
 
+#ifdef BARE_METAL
+  kprintf("---------------------------------------------\n");
+  kprintf("After configure for WG_CHECKER\n");
+#else
   printf("---------------------------------------------\n");
   printf("After configure for WG_CHECKER\n");
+#endif
   wgc_print_slot_reg(WGC_MEMORY_BASE, 0);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 1);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 2);
@@ -66,9 +84,23 @@ void read_unauthorized_cacheline2()
     fill_cacheline2(parr);
     write_csr(0x391, wid);
     for (int cl = 0; cl < 4; cl++) {
+#ifdef BARE_METAL
+      kprintf("[wid%d][line%d] read lines\n", wid, cl);
+#else
       printf("[wid%d][line%d] read lines\n", wid, cl);
-      for (int i = 0; i < SZ_CL; i++) printf("%d ", *(parr + SZ_CL * cl + i));
+#endif
+      for (int i = 0; i < SZ_CL; i++) {
+#ifdef BARE_METAL
+      kprintf("%d ", *(parr + SZ_CL * cl + i));
+#else
+      printf("%d ", *(parr + SZ_CL * cl + i));
+#endif
+      }
+#ifdef BARE_METAL
+      kprintf("\n");
+#else
       printf("\n");
+#endif
     }
   }
 }

@@ -48,11 +48,17 @@ int main(void)
           );
 
 
+  kprintf("\n\n Testing init_worldguard\n");
   init_worldguard();
+  kprintf("\n\n Testing read_unauthorized_cacheline1\n");
   read_unauthorized_cacheline1();
+  kprintf("\n\n Testing read_unauthorized_cacheline2\n");
   read_unauthorized_cacheline2();
+  kprintf("\n\n Testing multiple_permissions_on_cacheline\n");
   multiple_permissions_on_cacheline();
+  kprintf("\n\n Testing overwrite_stackframe\n");
   overwrite_stackframe();
+  kprintf("\n\n Testing raw_cacheline\n");
   raw_cacheline();
 
   while (1) {

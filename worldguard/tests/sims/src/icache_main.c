@@ -6,7 +6,7 @@ int main()
 {
   printf("---------------------------------------------\n");
   printf("Start Testing WorldGuard...\n");
-  init_worldguard();
+  //init_worldguard();
   test_icache();
   
   return 0;

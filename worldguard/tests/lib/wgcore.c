@@ -8,6 +8,9 @@
 #include <common/wgchecker.h>
 #include <platform/platform.h>
 
+#ifdef BARE_METAL
+#include "kprintf.h"
+#endif
 
 
 //--------------------------------------------------------------------------------------------------
@@ -24,7 +27,13 @@ void wgcore_print_regs() {
   GET_CSR(WG_CSR_MLWID, mlwid);
   GET_CSR(WG_CSR_SLWID, slwid);
   GET_CSR(WG_CSR_MWIDDELEG, mwiddeleg);
+#ifdef BARE_METAL
+  kprintf("[WGCore] MLWID                  : 0x%lx\n", mlwid);
+  kprintf("[WGCore] MWIDDELEG              : 0x%lx\n", mwiddeleg);
+  kprintf("[WGCore] SLWID                  : 0x%lx\n", slwid);
+#else
   printf("[WGCore] MLWID                  : %#lx\n", mlwid);
   printf("[WGCore] MWIDDELEG              : %#lx\n", mwiddeleg);
   printf("[WGCore] SLWID                  : %#lx\n", slwid);
+#endif
 }

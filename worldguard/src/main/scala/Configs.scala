@@ -43,7 +43,7 @@ class WithWorldGuard(nWorlds: Int, nSlots: Int) extends Config((site, here, up) 
         mwid      = nWorlds - 1,
         widWidth  = log2Ceil(nWorlds),
         nSlots    = nSlots,
-        address   = 0x2030000,
+        address   = 0x6005000,
         size      = 4096)
       )
     )
@@ -58,7 +58,7 @@ class WithWorldGuard(nWorlds: Int, nSlots: Int) extends Config((site, here, up) 
         mwid      = nWorlds - 1,
         widWidth  = log2Ceil(nWorlds),
         nSlots    = nSlots,
-        address   = 0x2040000,
+        address   = 0x6003000,
         size      = 4096)
       )
     )
@@ -71,7 +71,7 @@ class WithWorldGuard(nWorlds: Int, nSlots: Int) extends Config((site, here, up) 
         mwid      = nWorlds - 1,
         widWidth  = log2Ceil(nWorlds),
         nSlots    = nSlots,
-        address   = 0x2050000,
+        address   = 0x6004000,
         size      = 4096)
     )
   }

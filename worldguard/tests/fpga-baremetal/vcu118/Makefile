@@ -2,7 +2,7 @@ CC=$(RISCV)/bin/riscv64-unknown-elf-gcc
 OBJCOPY=$(RISCV)/bin/riscv64-unknown-elf-objcopy
 OBJDUMP=$(RISCV)/bin/riscv64-unknown-elf-objdump
 
-CFLAGS = -march=rv64imfd -mabi=lp64d -fno-builtin -ffreestanding
+CFLAGS = -march=rv64imfd -mabi=lp64d -fno-builtin -ffreestanding -D BARE_METAL
 
 CCFLAGS = $(CFLAGS) -DBARE_METAL
 CCFLAGS += -mcmodel=medany -O0 -Wall

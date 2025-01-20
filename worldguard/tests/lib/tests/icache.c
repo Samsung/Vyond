@@ -15,6 +15,10 @@
 #include <platform/platform.h>
 #include <common/csr.h>
 
+#ifdef BARE_METAL
+#include "kprintf.h"
+#endif
+
 unsigned int gcd_ref(unsigned int x, unsigned int y) {
   while (y != 0) {
     if (x > y)
@@ -28,12 +32,21 @@ unsigned int gcd_ref(unsigned int x, unsigned int y) {
 void config_wgchecker()
 {
   write_csr(0x391, 3);
+#ifdef BARE_METAL
+  kprintf("---------------------------------------------\n");
+  kprintf("Configuring WGC_MEMORY ...\n");
+#else
   printf("---------------------------------------------\n");
   printf("Configuring WGC_MEMORY ...\n");
+#endif
   unsigned int (*pFunc)(unsigned int, unsigned int) = gcd_ref;
 
   uint64_t lgAlign = 6; // cache line aligned
+#ifdef BARE_METAL
+  kprintf("pFunc: 0x%lx\n", pFunc);
+#else
   printf("pFunc: %p\n", pFunc);
+#endif
   //----------------------------------------------------------------------------
   // No. | Addr           | CFG   | PERM    | Description
   //----------------------------------------------------------------------------
@@ -50,10 +63,14 @@ void config_wgchecker()
 
 void test_icache()
 {
-  config_wgchecker();
+  //config_wgchecker();
   for (int wid = 0; wid < 4; wid++) {
     write_csr(0x391, wid);
+#ifdef BARE_METAL
+    kprintf("[wid%d] calling gcd_ref\n", wid);
+#else
     printf("[wid%d] calling gcd_ref\n", wid);
+#endif
     gcd_ref(1000, 2000);
   }
 }

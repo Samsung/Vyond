@@ -45,12 +45,12 @@
 #define WG_MARKER_ROCKET_BASE     (0x2100000) 
 
 #define WGP_PERIPHERY_BASE        (0x2020000)
-#define WGC_PERIPHERY_BASE        (0x2030000)
+#define WGC_PERIPHERY_BASE        (0x6005000)
 
-#define WGC_PLIC_BASE             (0x2040000)
-#define WGC_BOOTROM_BASE          (0x2050000)
+#define WGC_PLIC_BASE             (0x6003000)
+#define WGC_BOOTROM_BASE          (0x6004000)
 
-#define WGC_MEMORY_BASE       (0x2060000)
+#define WGC_MEMORY_BASE       (0x6000000)
 #define MAX_WGCHECKERS            (4)
 
 #endif /* PLATFORM_H*/

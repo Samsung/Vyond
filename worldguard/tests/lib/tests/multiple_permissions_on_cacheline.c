@@ -19,6 +19,11 @@
 #include <common/wgchecker.h>
 #include <platform/platform.h>
 
+#ifdef BARE_METAL
+#include "kprintf.h"
+#endif
+
+
 void multiple_permissions_on_cacheline()
 {
   uint32_t arr[2];
@@ -49,20 +54,38 @@ void multiple_permissions_on_cacheline()
   reg_write32(WGC_MEMORY_BASE + SLOT_N_CFG    (3), 0x301);
   reg_write64(WGC_MEMORY_BASE + SLOT_N_PERM   (3), 0xff);
 
+#ifdef BARE_METAL
+  kprintf("---------------------------------------------\n");
+  kprintf("After configure for WG_CHECKER\n");
+#else
   printf("---------------------------------------------\n");
   printf("After configure for WG_CHECKER\n");
+#endif
+
   wgc_print_slot_reg(WGC_MEMORY_BASE, 0);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 1);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 2);
   wgc_print_slot_reg(WGC_MEMORY_BASE, 3);
 
+#ifdef BARE_METAL
+  kprintf("arr: 0x%lx\n", arr);
+#else
   printf("arr: %p\n", arr);
+#endif
 
   write_csr(0x391, 1);
   arr[0] = 3;
+#ifdef BARE_METAL
+  kprintf("[wid1] arr[0] = %d\n", arr[0]);
+#else
   printf("[wid1] arr[0] = %d\n", arr[0]);
+#endif
 
   // wid1 does not have access to arr[1]
   arr[1] = 4;
+#ifdef BARE_METAL
+  kprintf("[wid1] arr[1] = %d\n", arr[1]);
+#else
   printf("[wid1] arr[1] = %d\n", arr[1]);
+#endif
 }

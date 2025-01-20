@@ -21,6 +21,10 @@
 #include <common/wgchecker.h>
 #include <platform/platform.h>
 
+#ifdef BARE_METAL
+#include "kprintf.h"
+#endif
+
 void overwrite_stackframe()
 {
   uint8_t val;
@@ -55,18 +59,23 @@ void overwrite_stackframe()
   reg_write64(WGC_MEMORY_BASE + SLOT_N_CFG    (3), 0x301);
   reg_write64(WGC_MEMORY_BASE + SLOT_N_PERM   (3), 0xff);
 
-  //printf("---------------------------------------------\n");
-  //printf("After configure for WG_CHECKER\n");
-  //wgc_print_slot_reg(WGC_MEMORY_BASE, 0);
-  //wgc_print_slot_reg(WGC_MEMORY_BASE, 1);
-  //wgc_print_slot_reg(WGC_MEMORY_BASE, 2);
-  //wgc_print_slot_reg(WGC_MEMORY_BASE, 3);
-
+#ifdef BARE_METAL
+  kprintf("&val = %p aligned addr: 0x%lx &val + 1 = 0x%lx\n", &val, addr, addr2);
+#else
   printf("&val = %p aligned addr: %#lx &val + 1 = %#lx\n", &val, addr, addr2);
+#endif
   val = 3;
+#ifdef BARE_METAL
+  kprintf("[wid%ld] val = %d\n", read_csr(0x391), val);
+#else
   printf("[wid%ld] val = %d\n", read_csr(0x391), val);
+#endif
 
   write_csr(0x391, 1);   // <-- overwrite variables on the same cacheline (potentially return address) with zero values!!!
+#ifdef BARE_METAL
+  kprintf("[wid%ld] val = %d\n", read_csr(0x391), val);
+#else
   printf("[wid%ld] val = %d\n", read_csr(0x391), val);
+#endif
   // won't be able to return to caller if the return address is zeroed-out.
 }
