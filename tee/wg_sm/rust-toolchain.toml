@@ -1,7 +1,0 @@
-[toolchain]
-channel = "nightly"
-components = [ "rust-src", "clippy" ]
-## Rustup always installs the host target by default, so we don't need to specify it here.
-## All we need to specify is the uefi targets used to build our `uefi-bootloader`.
-targets = [ "riscv64gc-unknown-linux-gnu"]
-profile = "default"

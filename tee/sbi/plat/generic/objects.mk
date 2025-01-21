@@ -2,7 +2,7 @@
 platform-cppflags-y =
 platform-cflags-y = -I../src
 platform-asflags-y =
-platform-ldflags-y = -L../../wg_sm/target/riscv64gc-unknown-linux-gnu/debug -lvyond
+platform-ldflags-y = -L../../monitor/target/riscv64gc-unknown-linux-gnu/debug -lvyond
 
 # Command for platform specific "make run"
 platform-runcmd = qemu-system-riscv$(PLATFORM_RISCV_XLEN) -M virt -m 256M \

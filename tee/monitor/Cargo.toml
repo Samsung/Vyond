@@ -26,6 +26,7 @@ opt-level = 'z'
 [dependencies]
 semihosting = { package = "semihosting", path = "../modules/semihosting", feature = "machine-mode", optional = true}
 paste = "1.0"
+volatile-register = "0.2.2"
 
 [build-dependencies]
 cc = "1.0"
