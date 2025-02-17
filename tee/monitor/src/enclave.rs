@@ -6,14 +6,6 @@ use crate::thread;
 use crate::trap::TrapFrame;
 use crate::Error;
 
-#[cfg(feature = "semihosting")] 
-use semihosting::{heprintln, hprintln};
-#[cfg(not(feature = "semihosting"))]
-use core::ffi::c_char;
-#[cfg(not(feature = "semihosting"))]
-use crate::api::sbi_printf;
-
-
 #[derive(PartialEq, Clone, Copy)]
 pub enum State {
     Stopped,
@@ -34,6 +26,44 @@ pub struct RunState {
     state: State,
 }
 
+#[repr(C)]
+pub struct RuntimeVAParams {
+    pub runtime_entry: usize,
+    pub user_entry: usize,
+    pub untrusted_ptr: usize,
+    pub untrusted_size: usize,
+    pub num_eapp_pages: usize,
+}
+
+#[repr(C)]
+pub struct RuntimePAParams {
+    dram_base: usize,
+    dram_size: usize,
+    runtime_base: usize,
+    user_base: usize,
+    free_base: usize,
+    untrusted_base: usize,
+    untrusted_size: usize,
+    free_requested: usize,
+}
+
+#[repr(C)]
+pub struct KeystoneSBIPReigion {
+    pub paddr: usize,
+    pub size: usize,
+}
+
+#[repr(C)]
+pub struct KeystoneSBICreate {
+    pub epm_region: KeystoneSBIPReigion,
+    pub utm_region: KeystoneSBIPReigion,
+
+    pub runtime_paddr: usize,
+    pub user_paddr: usize,
+    pub free_paddr: usize,
+    pub free_requested: usize,
+}
+
 // enclave metadata
 pub struct Enclave {
     eid: usize,                // enclave id
@@ -44,19 +74,18 @@ pub struct Enclave {
 
     // enclave execution context
     threads: [Option<thread::State>; MAX_ENCLAVE_THREADS],
+
+    pa_params: RuntimePAParams,
 }
 
 impl Enclave {
     const REGION_INIT: Option<Region> = None;
     const THREAD_INIT: Option<thread::State> = None;
 
-    pub fn allocate<'a>() -> Result<&'a mut Enclave, Error> {
+    pub fn allocate<'a>(pa_params: RuntimePAParams) -> Result<&'a mut Enclave, Error> {
         for eid in 0..MAX_ENCLAVES {
             if unsafe { ENCLAVES[eid].is_none() } {
-                #[cfg(feature = "semihosting")] {
-                    hprintln!("Found enclave: {}", eid);
-                }
-                unsafe { ENCLAVES[eid] = Some(Enclave::new(eid)) };
+                unsafe { ENCLAVES[eid] = Some(Enclave::new(eid, pa_params)) };
                 return Ok(unsafe { ENCLAVES[eid].as_mut().unwrap() });
             }
         }
@@ -64,15 +93,16 @@ impl Enclave {
         Err(Error::NoFreeResource)
     }
 
-    pub fn new(eid: usize) -> Self {
+    pub fn new(eid: usize, pa_params: RuntimePAParams) -> Self {
         Enclave {
-            eid: eid,
+            eid,
             regions: [Self::REGION_INIT; MAX_ENCLAVE_REGIONS],
             state: SpinLock::new(RunState {
                 count: 0,
                 state: State::Stopped,
             }),
             threads: [Self::THREAD_INIT; MAX_ENCLAVE_THREADS],
+            pa_params,
         }
     }
 
@@ -85,37 +115,56 @@ impl Enclave {
         Ok(())
     }
 
-    pub fn switch_to_enclave(&mut self, regs: &mut TrapFrame) {
-        let hartid = csr_read!(mhartid) as usize;
+    pub fn switch_to_enclave(&mut self, regs: &mut TrapFrame, load_parameters: bool) {
+        //let hartid = csr_read!(mhartid) as usize;
 
         /* save host context */
-        let thread = &mut self.threads[hartid].as_mut().unwrap();
+        let thread = &mut self.threads[0].as_mut().unwrap();
 
         thread.swap_prev_state(regs);
         thread.swap_prev_mepc(regs, regs.mepc);
         thread.swap_prev_mstatus(regs, regs.mstatus);
 
-        #[cfg(feature = "semihosting")] {
-            hprintln!(
-                "to-enclave: mepc: {:#x}, mhstatus: {:#x}",
-                regs.mepc,
-                regs.mstatus
-            );
-        }
+        //#[cfg(feature = "semihosting")]
+        //{
+        //    hprintln!(
+        //        "to-enclave: mepc: {:#x}, mhstatus: {:#x}",
+        //        regs.mepc,
+        //        regs.mstatus
+        //    );
+        //}
 
         let interrupts = 0;
         csr_write!(mideleg, interrupts);
+
+        if load_parameters {
+            //csr_write!(sepc, self.params.user_entry);
+            regs.mepc = self.pa_params.dram_base - 4; // regs->mepc will be +4 before sbi_ecall_handler return
+            regs.mstatus = 1 << crate::encoding::MSTATUS_MPP_SHIFT;
+            regs.a1 = self.pa_params.dram_base; // $a1: (PA) DRAM base,
+            regs.a2 = self.pa_params.dram_size; // $a2: (PA) DRAM size,
+            regs.a3 = self.pa_params.runtime_base; // $a3: (PA) kernel location,
+            regs.a4 = self.pa_params.user_base; // $a4: (PA) user location,
+            regs.a5 = self.pa_params.free_base; // $a5: (PA) freemem location,
+            regs.a6 = self.pa_params.untrusted_base; // $a6: (VA) utm base,
+            regs.a7 = self.pa_params.untrusted_size; // $a7: (size_t) utm size
+
+            csr_write!(satp, 0);
+        }
 
         //switch_vector_enclave();
 
         // NOTICE: Temporarily commented out for testing using payload.
         // set PMP
         //let _ = crate::osm_pmp_set(pmp::PMP_NO_PERM);
-        //(0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
-        //    if let Some(ref region) = self.regions[memid] {
-        //        let _ = pmp::set_keystone(region.id, pmp::PMP_ALL_PERM);
-        //    }
-        //});
+
+        let _ = pmp::set_keystone(self.eid, pmp::PMP_NO_PERM);
+        (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
+            if let Some(ref region) = self.regions[memid] {
+                let _ = pmp::set_keystone(region.id, pmp::PMP_ALL_PERM);
+            }
+        });
+        //pmp::display_pmp();
 
         // Setup any platform specific defenses
         cpu::enter_enclave_context(self.eid);
@@ -123,11 +172,12 @@ impl Enclave {
 
     pub fn switch_to_host(&mut self, regs: &mut TrapFrame) {
         // set PMP
-        //(0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
-        //    if let Some(region) = self.regions[memid].as_ref() {
-        //        let _ = pmp::set_keystone(region.pmp_rid, pmp::PMP_NO_PERM);
-        //    }
-        //});
+        (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
+            if let Some(region) = self.regions[memid].as_ref() {
+                let _ = pmp::set_keystone(region.id, pmp::PMP_NO_PERM);
+            }
+        });
+        //pmp::display_pmp();
 
         let interrupts = MIP_SSIP | MIP_STIP | MIP_SEIP;
         csr_write!(mideleg, interrupts);
@@ -139,13 +189,14 @@ impl Enclave {
         thread.swap_prev_mepc(regs, regs.mepc);
         thread.swap_prev_mstatus(regs, regs.mstatus);
 
-        #[cfg(feature = "semihosting")] {
-            hprintln!(
-                "to-host: mepc: {:#x}, mhstatus: {:#x}",
-                regs.mepc,
-                regs.mstatus
-            );
-        }
+        //#[cfg(feature = "semihosting")]
+        //{
+        //    hprintln!(
+        //        "to-host: mepc: {:#x}, mhstatus: {:#x}",
+        //        regs.mepc,
+        //        regs.mstatus
+        //    );
+        //}
 
         //switch_vector_host();
 
@@ -182,41 +233,37 @@ pub fn enclave_exists(enclaves: &[Option<Enclave>], eid: usize) -> bool {
  *
  * This may fail if: it cannot allocate PMP regions, EIDs, etc
  */
-pub fn create_enclave<'a>(base: usize, size: usize, entry: usize) -> Result<&'a Enclave, Error> {
-    let enclave: &mut Enclave = Enclave::allocate()?;
-    
-    #[cfg(not(feature = "semihosting"))] {
-        let format = b"Entered create_enclave\n\0".as_ptr().cast::<c_char>();
-        unsafe { sbi_printf(format); }
-    }
+pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave, Error> {
+    let pa_params = RuntimePAParams {
+        dram_base: create_args.epm_region.paddr,
+        dram_size: create_args.epm_region.size,
+        runtime_base: create_args.runtime_paddr,
+        user_base: create_args.user_paddr,
+        free_base: create_args.free_paddr,
+        untrusted_base: create_args.utm_region.paddr,
+        untrusted_size: create_args.utm_region.size,
+        free_requested: create_args.free_requested,
+    };
+    let enclave: &mut Enclave = Enclave::allocate(pa_params)?;
+
+    // TODO: Check if create_args is valid
 
     // create a PMP region bound to the enclave
-    if let Ok(region) = pmp::pmp_region_init(base, size, pmp::Priority::Any, false) {
-        #[cfg(feature = "semihosting")] {
-            hprintln!("Found unused pmp slot: {}", region);
-        }
-        #[cfg(not(feature = "semihosting"))] {
-            let format = b"Found unused pmp slot\n\0".as_ptr().cast::<c_char>();
-            unsafe { sbi_printf(format); }
-        }
+    if let Ok(region) = pmp::pmp_region_init(
+        create_args.epm_region.paddr,
+        create_args.epm_region.size,
+        pmp::Priority::Any,
+        false,
+    ) {
+        //hprintln!("Found unused pmp slot: {}", region);
         enclave.regions[0] = Some(Region { id: region });
-
         enclave.threads[0] = Some(thread::State::new(
-            entry - 4,
+            create_args.epm_region.paddr - 4,
             (1 << crate::encoding::MSTATUS_MPP_SHIFT) | crate::encoding::MSTATUS_FS,
         ));
 
         return Ok(enclave);
     }
-
-    #[cfg(feature = "semihosting")] {
-        heprintln!("No pmp slot found");
-    }
-    #[cfg(not(feature = "semihosting"))] {
-        let format = b"No pmp slot found\n\0".as_ptr().cast::<c_char>();
-        unsafe { sbi_printf(format); }
-    }
-
     Err(Error::NoFreeResource)
 }
 
@@ -291,7 +338,7 @@ pub fn enter_enclave(tf: &mut TrapFrame, eid: usize) -> Result<(), Error> {
             return Err(Error::NotRunnable);
         }
 
-        enclave.switch_to_enclave(tf);
+        enclave.switch_to_enclave(tf, true);
 
         return Ok(());
     }
@@ -299,7 +346,63 @@ pub fn enter_enclave(tf: &mut TrapFrame, eid: usize) -> Result<(), Error> {
     Err(Error::Invalid)
 }
 
-pub fn exit_enclave(tf: &mut TrapFrame, retval: usize) -> Result<(), Error> {
+pub fn resume_enclave(tf: &mut TrapFrame) -> Result<(), Error> {
+    if let Some(enclave) = find_enclave(cpu::get_enclave_id()) {
+        let mut runstate = enclave.state.lock();
+        let resumable = (runstate.state == State::Running || runstate.state == State::Stopped)
+            && runstate.count < MAX_ENCLAVE_THREADS;
+
+        if resumable {
+            runstate.count += 1;
+            runstate.state = State::Running;
+        }
+
+        drop(runstate);
+
+        if !resumable {
+            return Err(Error::NotResumable);
+        }
+
+        enclave.switch_to_enclave(tf, false);
+
+        return Ok(());
+    }
+
+    return Err(Error::InvalidId);
+}
+
+pub fn stop_enclave(tf: &mut TrapFrame, request: usize) -> Result<(), Error> {
+    if let Some(enclave) = find_enclave(cpu::get_enclave_id()) {
+        let mut runstate = enclave.state.lock();
+        let runnable = runstate.state == State::Running;
+
+        if runnable {
+            runstate.count -= 1;
+            if runstate.count == 0 {
+                runstate.state = State::Stopped;
+            }
+        }
+
+        drop(runstate);
+
+        if !runnable {
+            return Err(Error::NotRunning);
+        }
+
+        enclave.switch_to_host(tf);
+
+        let ret = match request {
+            0/*StopReason::TimerInterrupt*/ => Err(Error::Interrupted),
+            1/*StopReason::EdgeCallHost*/ => Err(Error::EdgeCallHost),
+            _ => Err(Error::Unknown),
+        };
+        return ret;
+    }
+
+    return Err(Error::Invalid);
+}
+
+pub fn exit_enclave(tf: &mut TrapFrame) -> Result<(), Error> {
     if let Some(enclave) = find_enclave(cpu::get_enclave_id()) {
         let mut runstate = enclave.state.lock();
         let runnable = runstate.state == State::Running && runstate.count > 0;

@@ -74,4 +74,5 @@ else
 	platform-objs-y += sifive_fu540.o
 endif
 platform-objs-y += vyond.o
+platform-objs-y += mprv.o
 

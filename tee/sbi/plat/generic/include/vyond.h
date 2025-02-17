@@ -11,11 +11,13 @@
 #define SBI_SM_CREATE_ENCLAVE     2001
 #define SBI_SM_DESTROY_ENCLAVE    2002
 #define SBI_SM_ENTER_ENCLAVE      2003
+#define SBI_SM_RESUME_ENCLAVE     2005
 #define FID_RANGE_HOST            2999
 /* 3000-3999 are called by enclave */
 #define SBI_SM_RANDOM             3001
 #define SBI_SM_ATTEST_ENCLAVE     3002
 #define SBI_SM_GET_SEALING_KEY    3003
+#define SBI_SM_STOP_ENCLAVE       3004
 #define SBI_SM_EXIT_ENCLAVE       3006
 #define FID_RANGE_ENCLAVE         3999
 /* 4000-4999 are experimental */
@@ -55,5 +57,25 @@
 #define SBI_ERR_SM_PMP_REGION_IMPOSSIBLE_TOR           100026
 
 int vyond_monitor_init(bool cold_boot);
+
+
+
+/* creation parameters */
+// TODO: it's duplicated! Just include header in sdk
+struct keystone_sbi_pregion_t {
+  uintptr_t paddr;
+  size_t size;
+};
+
+struct keystone_sbi_create_t {
+  struct keystone_sbi_pregion_t epm_region;
+  struct keystone_sbi_pregion_t utm_region;
+
+  uintptr_t runtime_paddr;
+  uintptr_t user_paddr;
+  uintptr_t free_paddr;
+  uintptr_t free_requested;
+};
+
 
 #endif /*!__VYOND_H__*/

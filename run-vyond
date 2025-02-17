@@ -120,7 +120,7 @@ def main(argv: List[str] = None):
     # build sm
     #################################################################
     parser_buildSM = subparsers.add_parser('build-sm', help='Build Security Monitor')
-    parser_buildSM.add_argument("--semihosting", action='store_true', default=False, help="Enable semihosting. It doesn't work with Rocket SoC")
+    parser_buildSM.add_argument("--semihosting", action='store_true', default=True, help="Enable semihosting. It doesn't work with Rocket SoC")
     parser_buildSM.add_argument("--clean-build", action='store_true', default=False, help="Clean build")
     parser_buildSM.set_defaults(func=buildSM)
     
@@ -147,7 +147,7 @@ def main(argv: List[str] = None):
     parser_runFWOnWGQemu = subparsers.add_parser('run-fw-on-qemu', help='Run FW on WG-Aware qemu')
     parser_runFWOnWGQemu.add_argument('--debug', action='store_true', default=False, help="run with gdb")
     parser_runFWOnWGQemu.add_argument("--qemu", type=str, default='../prebuilt/qemu-system-riscv64', help="Absolute path to wg-aware qemu")
-    parser_runFWOnWGQemu.add_argument("--fw_path", type=str, default='./sbi/opensbi/build/platform/generic/firmware/fw_payload.bin', help="Absolute Firmware path")
+    parser_runFWOnWGQemu.add_argument("--fw_path", type=str, default='./sbi/opensbi/build/platform/generic/firmware/fw_jump.bin', help="Absolute Firmware path")
     parser_runFWOnWGQemu.set_defaults(func=runFWOnWGQemu)
     
     args = parser.parse_args()

@@ -24,7 +24,7 @@ opt-level = 'z'
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-semihosting = { package = "semihosting", path = "../modules/semihosting", feature = "machine-mode", optional = true}
+semihosting = { package = "semihosting", path = "../modules/semihosting", feature = "machine-mode"}
 paste = "1.0"
 volatile-register = "0.2.2"
 

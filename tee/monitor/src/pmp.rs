@@ -2,6 +2,9 @@ use crate::encoding::{PMP_A_NAPOT, PMP_A_TOR, PMP_R, PMP_W, PMP_X};
 use crate::Error;
 use crate::PAGE_SIZE;
 
+#[cfg(feature = "semihosting")]
+use semihosting::hprintln;
+
 #[derive(PartialEq)]
 pub enum Priority {
     Any,
@@ -81,6 +84,10 @@ pub struct Region {
 }
 
 impl Region {
+    pub fn mode(&self) -> usize {
+        self.mode
+    }
+
     pub fn index(&self) -> usize {
         self.index
     }
@@ -419,4 +426,33 @@ pub fn napot_region_init<'a>(
     }
 
     Ok(region_idx)
+}
+
+pub fn display_pmp() {
+    hprintln!("size mode addr overlap index");
+    hprintln!("-----------------------------");
+    (0..PMP_MAX_N_REGION).for_each(|index| {
+        if is_pmp_region_valid(index) {
+            let region = unsafe { REGIONS[index].as_ref().unwrap() };
+            hprintln!(
+                "[{}] {:x} {:x} {:x} {} {:x}",
+                index,
+                region.size,
+                region.mode,
+                region.addr,
+                region.allow_overlap,
+                region.index,
+            );
+        }
+    });
+
+    hprintln!("pmpaddr0: {:x}", csr_read!(pmpaddr0));
+    hprintln!("pmpaddr1: {:x}", csr_read!(pmpaddr1));
+    hprintln!("pmpaddr2: {:x}", csr_read!(pmpaddr2));
+    hprintln!("pmpaddr3: {:x}", csr_read!(pmpaddr3));
+    hprintln!("pmpaddr4: {:x}", csr_read!(pmpaddr4));
+    hprintln!("pmpaddr5: {:x}", csr_read!(pmpaddr5));
+    hprintln!("pmpaddr6: {:x}", csr_read!(pmpaddr6));
+    hprintln!("pmpaddr7: {:x}", csr_read!(pmpaddr7));
+    hprintln!("pmpcfg0 : {:x}", csr_read!(pmpcfg0));
 }

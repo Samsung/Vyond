@@ -6,9 +6,12 @@ export HOST_PORT
 ROOT_PATH="$(readlink -f "$(cd "$(dirname "$0")" && pwd)")"
 echo $ROOT_PATH
 
+ROOTFS_IMAGE="$ROOT_PATH/../prebuilt/rootfs.ext2"
+LINUX_IMAGE="$ROOT_PATH/../prebuilt/Image"
+
 echo "**** Running QEMU SSH on port ${HOST_PORT} ****";
 
-export SMP=2;
+export SMP=1;
 
 while [ "$1" != "" ]; do
     if [ "$1" = "-debug" ];
@@ -45,12 +48,18 @@ done
 #FW_ELF="$ROOT_PATH/sbi/opensbi/build/platform/generic/firmware/fw_payload.elf"
 
 # Remove rom option from machine
+CMD="$QEMU_SYSTEM $DEBUG -m 4G -nographic -machine virt,wg=on -bios $FW_ELF -kernel $LINUX_IMAGE -append console=ttyS0 ro root=/dev/vda -drive if=none,file=$ROOTFS_IMAGE,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -netdev user,id=net0,net=192.168.100.1/24,dhcpstart=192.168.100.128,hostfwd=tcp::${HOST_PORT}-:22 -device virtio-net-device,netdev=net0 -device virtio-rng-pci  -smp $SMP -semihosting-config enable=on,userspace=on"
+echo $CMD
 $QEMU_SYSTEM \
     $DEBUG \
     -m 4G \
     -nographic \
     -machine virt,wg=on \
     -bios "$FW_ELF" \
+    -kernel "$LINUX_IMAGE" \
+    -append "console=ttyS0 ro root=/dev/vda" \
+    -drive if=none,file="$ROOTFS_IMAGE",format=raw,id=hd0 \
+    -device virtio-blk-device,drive=hd0 \
     -netdev user,id=net0,net=192.168.100.1/24,dhcpstart=192.168.100.128,hostfwd=tcp::${HOST_PORT}-:22 \
     -device virtio-net-device,netdev=net0 \
     -device virtio-rng-pci  \

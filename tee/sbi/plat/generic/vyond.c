@@ -6,11 +6,16 @@
 #include <sbi/sbi_ecall.h>
 
 #include <vyond.h>
+#include <mprv.h>
 
-unsigned long sbi_sm_create_enclave(unsigned long base, unsigned long size, unsigned long entry);
+unsigned long sbi_sm_create_enclave(unsigned long* edi, uintptr_t create_args);
 unsigned long sbi_sm_destroy_enclave(unsigned long eid);
 unsigned long sbi_sm_enter_enclave(struct sbi_trap_regs *regs, unsigned long eid);
-unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retval);
+unsigned long sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long eid);
+unsigned long sbi_sm_stop_enclave(struct sbi_trap_regs *regs, unsigned long request);
+unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs);
+
+unsigned long copy_enclave_create_args(uintptr_t src, struct keystone_sbi_create_t* dest);
 
 static int sbi_ecall_vyond_monitor_handler(
     unsigned long extid, unsigned long funcid,
@@ -20,7 +25,7 @@ static int sbi_ecall_vyond_monitor_handler(
 {
     uintptr_t retval;
 
-    sbi_printf("SBI ECALL\n");
+    //sbi_printf("SBI ECALL funcid: %ld\n", funcid);
   
     if (funcid <= FID_RANGE_DEPRECATED) {
         return SBI_ERR_SM_DEPRECATED;
@@ -28,7 +33,11 @@ static int sbi_ecall_vyond_monitor_handler(
 
     switch (funcid) {
     case SBI_SM_CREATE_ENCLAVE:
-        retval = sbi_sm_create_enclave(regs->a0, regs->a1, regs->a2);
+        struct keystone_sbi_create_t create_args_local;
+        retval = copy_enclave_create_args((uintptr_t)regs->a0, &create_args_local);
+        if (!retval) {
+            retval = sbi_sm_create_enclave(out_val, (uintptr_t)&create_args_local);
+        }
         break;
     case SBI_SM_DESTROY_ENCLAVE:
         retval = sbi_sm_destroy_enclave(regs->a0);
@@ -38,8 +47,37 @@ static int sbi_ecall_vyond_monitor_handler(
         ((struct sbi_trap_regs *)regs)->mepc += 4;
         sbi_trap_exit(regs);
         break;
+    case SBI_SM_RESUME_ENCLAVE:
+        retval = sbi_sm_resume_enclave((struct sbi_trap_regs*) regs, regs->a0);
+        if (!regs->zero) {
+          ((struct sbi_trap_regs *)regs)->a0 = retval;
+        }
+        ((struct sbi_trap_regs *)regs)->mepc += 4;
+        sbi_trap_exit(regs);
+        break;
+    case SBI_SM_RANDOM:
+        static uint64_t w = 0, s = 0xb5ad4eceda1ce2a9;
+        unsigned long cycles;
+        asm volatile ("rdcycle %0" : "=r" (cycles));
+
+        // from Middle Square Weyl Sequence algorithm
+        uint64_t x = cycles;
+        x *= x;
+        x += (w += s);
+        *out_val = (x>>32) | (x<<32);
+        retval = 0;
+        break;
+    case SBI_SM_STOP_ENCLAVE:
+        retval = sbi_sm_stop_enclave((struct sbi_trap_regs*) regs, regs->a0);
+        ((struct sbi_trap_regs *)regs)->a0 = retval;
+        ((struct sbi_trap_regs *)regs)->mepc += 4;
+        sbi_trap_exit(regs);
+        break;
     case SBI_SM_EXIT_ENCLAVE:
-        retval = sbi_sm_exit_enclave((struct sbi_trap_regs*) regs, regs->a0);
+        unsigned long prev_reg_a0 = regs->a0;
+        retval = sbi_sm_exit_enclave((struct sbi_trap_regs*) regs);
+        ((struct sbi_trap_regs *)regs)->a0 = retval;
+        ((struct sbi_trap_regs *)regs)->a1 = prev_reg_a0;
         ((struct sbi_trap_regs *)regs)->mepc += 4;
         sbi_trap_exit(regs);
         break;
@@ -48,7 +86,7 @@ static int sbi_ecall_vyond_monitor_handler(
         break;
     }
   
-    sbi_printf("Retval = %lx\n", retval);
+    //sbi_printf("Retval = %lx\n", retval);
 
     return retval;
 }
@@ -78,4 +116,20 @@ int vyond_monitor_init(int cold_boot)
     sbi_ecall_register_extension(&ecall_vyond_monitor);
 
     return ret;
+}
+
+// TODO: This function is externally used by sm-sbi.c.
+// Change it to be internal (remove from the enclave.h and make static)
+/* Internal function enforcing a copy source is from the untrusted world.
+ * Does NOT do verification of dest, assumes caller knows what that is.
+ * Dest should be inside the SM memory.
+ */
+unsigned long copy_enclave_create_args(uintptr_t src, struct keystone_sbi_create_t* dest){
+
+  int region_overlap = copy_to_sm(dest, src, sizeof(struct keystone_sbi_create_t));
+
+  if (region_overlap)
+    return SBI_ERR_SM_ENCLAVE_REGION_OVERLAPS;
+  else
+    return SBI_ERR_SM_ENCLAVE_SUCCESS;
 }
