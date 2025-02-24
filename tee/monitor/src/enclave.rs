@@ -1,5 +1,6 @@
 use crate::cpu;
 use crate::encoding::*;
+use crate::os_region_id;
 use crate::pmp;
 use crate::spinlock::SpinLock;
 use crate::thread;
@@ -154,17 +155,12 @@ impl Enclave {
 
         //switch_vector_enclave();
 
-        // NOTICE: Temporarily commented out for testing using payload.
-        // set PMP
-        //let _ = crate::osm_pmp_set(pmp::PMP_NO_PERM);
-
-        let _ = pmp::set_keystone(self.eid, pmp::PMP_NO_PERM);
+        //let _ = pmp::set_keystone(os_region_id(), pmp::PMP_NO_PERM);
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(ref region) = self.regions[memid] {
                 let _ = pmp::set_keystone(region.id, pmp::PMP_ALL_PERM);
             }
         });
-        //pmp::display_pmp();
 
         // Setup any platform specific defenses
         cpu::enter_enclave_context(self.eid);
@@ -177,7 +173,7 @@ impl Enclave {
                 let _ = pmp::set_keystone(region.id, pmp::PMP_NO_PERM);
             }
         });
-        //pmp::display_pmp();
+        let _ = pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM);
 
         let interrupts = MIP_SSIP | MIP_STIP | MIP_SEIP;
         csr_write!(mideleg, interrupts);

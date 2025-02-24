@@ -1,7 +1,6 @@
 use volatile_register::{RO, RW};
 
 /// General WGC
-//const NUM_N_SLOTS: usize = 16;
 pub const WGC_SLOT_OFFSET: usize = 0x20;
 pub const WGC_SLOT_SIZE: usize = 0x20;
 
@@ -137,29 +136,14 @@ pub struct WGCheckers {
     pub uart: WGChecker,
 }
 
-/// Set to `true` when `take` or `steal` was called to make `WGCheckers` a singletone.
-static mut TAKEN_WG_CHECKERS: bool = false;
-
-impl WGCheckers {
-    /// Returns all the WG Checkers *once*
-    #[inline]
-    pub fn take() -> Option<Self> {
-        if unsafe { TAKEN_WG_CHECKERS } {
-            None
-        } else {
-            Some(unsafe { WGCheckers::steal() })
-        }
-    }
-
-    /// Unchecked version of `WGCheckers::take`
-    #[inline]
-    pub unsafe fn steal() -> Self {
-        TAKEN_WG_CHECKERS = true;
-
-        WGCheckers {
-            dram: WGChecker { base: 0x600_0000 },
-            flash: WGChecker { base: 0x600_1000 },
-            uart: WGChecker { base: 0x600_2000 },
-        }
-    }
-}
+pub static mut WGCHECKERS: WGCheckers = WGCheckers {
+    dram: WGChecker {
+        base: 0x600_0000,
+    },
+    flash: WGChecker {
+        base: 0x600_1000,
+    },
+    uart: WGChecker {
+        base: 0x600_2000,
+    },
+};
