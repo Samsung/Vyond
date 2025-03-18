@@ -110,41 +110,20 @@ pub extern "C" fn sm_init(cold_boot: bool) -> isize {
         }
 
         sm_init_done();
-        isolator::display_isolator();
         compiler_fence(Ordering::Release);
     }
 
     /* wait until cold-boot hart finishes */
     sm_wait_for_completion();
 
-    /* below are executed by all harts */
-    #[cfg(feature = "usepmp")]
-    pmp::reset(pmp::PMP_N_REG);
+    let _ = isolator::update(sm_region_id());
+    let _ = isolator::update(os_region_id());
+    isolator::display_isolator();
 
-    #[cfg(feature = "usepmp")]
-    let _ = pmp::set_keystone(sm_region_id(), pmp::PMP_NO_PERM);
-    #[cfg(feature = "usepmp")]
-    let _ = pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM);
-
-    #[cfg(feature = "usepmp")]
-    pmp::display_pmp();
-
-    #[cfg(feature = "semihosting")]
-    {
-        hprintln!(
-            "Vyond security monitor has been initialized on hart-#{:#x}!\n",
-            hartid
-        );
-    }
-    #[cfg(not(feature = "semihosting"))]
-    {
-        let format = b"Vyond security monitor has been initialized on hart %d\n\0"
-            .as_ptr()
-            .cast::<c_char>();
-        unsafe {
-            sbi_printf(format);
-        }
-    }
+    hprintln!(
+        "Vyond security monitor has been initialized on hart-#{:#x}!\n",
+        hartid
+    );
 
     0
 }

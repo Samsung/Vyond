@@ -8,17 +8,7 @@ pub fn smm_init<'a>() -> Result<usize, Error> {
     return pmp::pmp_region_init(SMM_BASE, SMM_SIZE, pmp::Priority::Top, false);
     #[cfg(feature = "usewg")]
     {
-        unsafe {
-            WGCHECKERS.dram.set_slot_cfg(
-                1,
-                WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | WGC_CFG_A_NAPOT,
-            );
-            WGCHECKERS
-                .dram
-                .set_slot_addr(1, ((SMM_BASE | (SMM_SIZE / 2 - 1)) >> 2) as u64);
-            WGCHECKERS.dram.set_slot_perm(1, 0xc0); // RW for w3 only
-        }
-        return Ok(1);
+        return wg_region_init(SMM_BASE, SMM_SIZE, 3 << (TRUSTED_WID * 2), false);
     }
 }
 
@@ -29,24 +19,57 @@ pub fn osm_init<'a>() -> Result<usize, Error> {
     #[cfg(feature = "usewg")]
     {
         unsafe {
-            WGCHECKERS
-                .dram
-                .set_slot_addr(2, (SMM_BASE + SMM_SIZE >> 2) as u64); //
-            WGCHECKERS.dram.set_slot_cfg(2, 0x0); //TOR, report all
-            WGCHECKERS.dram.set_slot_perm(2, 0x00);
-
-            WGCHECKERS.dram.set_slot_addr(3, u64::MAX >> 3);
-            WGCHECKERS.dram.set_slot_cfg(
-                3,
-                WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | WGC_CFG_A_TOR,
-            );
-            WGCHECKERS.dram.set_slot_perm(3, 0x30); // RW for w2 (OS)
             let nslots = WGCHECKERS.flash.get_nslots();
             WGCHECKERS.flash.set_slot_perm(nslots as usize, 0xf0); // RW for w2, and w1
             let nslots = WGCHECKERS.uart.get_nslots();
             WGCHECKERS.uart.set_slot_perm(nslots as usize, 0xf0); // RW for w2, and w1
         }
-        return Ok(2);
+        return wg_region_init(SMM_BASE + SMM_SIZE, usize::MAX, 3 << (OS_WID * 2), false);
+    }
+}
+
+pub fn create_enclave(start: usize, size: usize, eid: usize) -> Result<usize, Error> {
+    #[cfg(feature = "usepmp")]
+    {
+        pmp::pmp_region_init(start, size, pmp::Priority::Any, false)
+    }
+    #[cfg(feature = "usewg")]
+    {
+        wg_region_init(start, size, 3 << eid, true)
+        //wg_region_init(start, size, 3 << eid, false)
+    }
+}
+
+pub fn set_isolator(region_idx: usize) -> Result<(), Error> {
+    #[cfg(feature = "usepmp")]
+    {
+        pmp::set_keystone(region_idx, pmp::PMP_ALL_PERM)
+    }
+    #[cfg(feature = "usewg")]
+    {
+        set_wg(region_idx)
+    }
+}
+
+pub fn reset_isolator(region_idx: usize) -> Result<(), Error> {
+    #[cfg(feature = "usepmp")]
+    {
+        pmp::set_keystone(region_idx, pmp::PMP_NO_PERM)
+    }
+    #[cfg(feature = "usewg")]
+    {
+        set_wg(region_idx)
+    }
+}
+
+pub fn region_free(region_idx: usize) -> Result<(), Error> {
+    #[cfg(feature = "usepmp")]
+    {
+        pmp::pmp_region_free(region_idx)
+    }
+    #[cfg(feature = "usewg")]
+    {
+        wg_region_free(region_idx)
     }
 }
 
@@ -97,5 +120,21 @@ pub fn display_isolator() {
                 );
             }
         }
+    }
+}
+
+pub fn update(region_id: usize) -> Result<(), Error> {
+    #[cfg(feature = "usepmp")]
+    {
+        /* below are executed by all harts */
+        pmp::reset(pmp::PMP_N_REG);
+        let _ = pmp::set_keystone(sm_region_id(), pmp::PMP_NO_PERM);
+        let _ = pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM);
+        pmp::display_pmp();
+        Ok(())
+    }
+    #[cfg(feature = "usewg")]
+    {
+        set_wg(region_id)
     }
 }

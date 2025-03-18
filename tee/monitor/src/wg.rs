@@ -1,3 +1,7 @@
+use crate::Error;
+use crate::PAGE_SIZE;
+#[cfg(feature = "semihosting")]
+use semihosting::{heprintln, hprintln};
 use volatile_register::{RO, RW};
 
 /// General WGC
@@ -18,6 +22,8 @@ pub const WGC_ERRCAUSE_R_SHIFT: u8 = 8;
 pub const WGC_ERRCAUSE_W_SHIFT: u8 = 9;
 pub const WGC_ERRCAUSE_BE_SHIFT: u8 = 62;
 pub const WGC_ERRCAUSE_IP_SHIFT: u8 = 63;
+
+pub const WGC_ALL_PERM: usize = (1 << (NWORLDS * 2)) - 1;
 
 /// WGC for Memory
 #[repr(C)]
@@ -137,13 +143,357 @@ pub struct WGCheckers {
 }
 
 pub static mut WGCHECKERS: WGCheckers = WGCheckers {
-    dram: WGChecker {
-        base: 0x600_0000,
-    },
-    flash: WGChecker {
-        base: 0x600_1000,
-    },
-    uart: WGChecker {
-        base: 0x600_2000,
-    },
+    dram: WGChecker { base: 0x600_0000 },
+    flash: WGChecker { base: 0x600_1000 },
+    uart: WGChecker { base: 0x600_2000 },
 };
+
+pub fn wg_region_init(
+    start: usize,
+    size: usize,
+    perm: u64,
+    allow_overlap: bool,
+) -> Result<usize, Error> {
+    hprintln!(
+        "wg_region_init start: {:#x} size: {:#x} perm: {:#x} allow_overlap: {}",
+        start,
+        size,
+        perm,
+        allow_overlap
+    );
+    if size == 0 {
+        return Err(Error::Invalid);
+    }
+    /* overlap detection */
+    if allow_overlap == false {
+        if detect_region_overlap(start, size) {
+            return Err(Error::Overlap);
+        }
+    }
+
+    hprintln!("debug-b");
+    /* WG granularity check */
+    if (size != usize::MAX) && ((size & (PAGE_SIZE - 1)) != 0) {
+        return Err(Error::NotPageGranularity);
+    }
+
+    if (start & (PAGE_SIZE - 1)) != 0 {
+        return Err(Error::NotPageGranularity);
+    }
+
+    /* if the address covers the entire RAM or it's NAPOT */
+    if (size == usize::MAX && start == 0)
+        || (((size & (size - 1)) == 0) && ((start & (size - 1)) == 0))
+    {
+        hprintln!(
+            "napot_region_init start {:#x} size {:#x} perm {:#x} allow_overlap {}",
+            start,
+            size,
+            perm,
+            allow_overlap
+        );
+        return napot_region_init(start, size, perm, allow_overlap);
+    } else {
+        hprintln!(
+            "tor_region_init start {:#x} size {:#x} perm {:#x} allow_overlap {}",
+            start,
+            size,
+            perm,
+            allow_overlap
+        );
+        return tor_region_init(start, size, perm, allow_overlap);
+    }
+}
+
+pub fn wg_region_free(region_idx: usize) -> Result<(), Error> {
+    if !is_wg_region_valid(region_idx) {
+        return Err(Error::Invalid);
+    }
+
+    let region = unsafe { REGIONS[region_idx].as_ref().unwrap() };
+    let reg_idx = region.index();
+    unsafe {
+        REGION_DEF_BITMAP &= !(1 << region_idx);
+        REG_BITMAP &= !(1 << reg_idx);
+    }
+    if region.needs_two_entries() {
+        unsafe { REG_BITMAP &= !(1 << (reg_idx - 1)) };
+    }
+
+    unsafe { REGIONS[region_idx] = None }
+
+    Ok(())
+}
+
+pub fn detect_region_overlap(addr: usize, size: usize) -> bool {
+    let mut region_overlap = false;
+    //let input_end = addr + size;
+    let input_end = match addr.checked_add(size) {
+        Some(sum) => sum,
+        None => usize::MAX,
+    };
+
+    (1..WG_MAX_N_REGION).for_each(|index| {
+        if is_wg_region_valid(index) {
+            let region = unsafe { REGIONS[index].as_ref().unwrap() };
+            if !region.allows_overlap() {
+                let epm_base = region.addr();
+                let epm_size = region.size();
+
+                // Only looking at valid regions, no need to check epm_base+size
+                region_overlap |= (epm_base < input_end) && (epm_base + epm_size > addr);
+            }
+        }
+    });
+
+    region_overlap
+}
+
+pub fn is_wg_region_valid(region_idx: usize) -> bool {
+    return (unsafe { REGION_DEF_BITMAP } & (1 << region_idx)) != 0;
+}
+
+pub const WG_MAX_N_REGION: usize = 16;
+pub const NWORLDS: u64 = 4;
+pub const TRUSTED_WID: u64 = NWORLDS - 1;
+pub const OS_WID: u64 = NWORLDS - 2;
+const INIT_VALUE: Option<Region> = None;
+
+/* PMP region getter/setters */
+static mut REGIONS: [Option<Region>; WG_MAX_N_REGION] = [INIT_VALUE; WG_MAX_N_REGION];
+static mut REG_BITMAP: usize = 1;
+static mut REGION_DEF_BITMAP: usize = 1; // slot[0] is a special rule slot so we don't use it.
+
+/// PMP region type
+pub struct Region {
+    size: usize,
+    mode: u32,
+    addr: usize,
+    perm: u64,
+    allow_overlap: bool,
+    index: usize,
+}
+
+impl Region {
+    pub fn mode(&self) -> u32 {
+        self.mode
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    pub fn allows_overlap(&self) -> bool {
+        self.allow_overlap
+    }
+
+    pub fn addr(&self) -> usize {
+        self.addr
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn is_napot(&self) -> bool {
+        self.mode == WGC_CFG_A_NAPOT
+    }
+
+    pub fn is_tor(&self) -> bool {
+        self.mode == WGC_CFG_A_TOR
+    }
+
+    pub fn needs_two_entries(&self) -> bool {
+        self.is_tor() && self.index > 0
+    }
+
+    pub fn is_napot_all(&self) -> bool {
+        self.addr == usize::MIN && self.size == usize::MAX
+    }
+
+    pub fn wgaddr_val(&self) -> u64 {
+        if self.is_napot_all() {
+            return !0;
+        } else if self.is_napot() {
+            return ((self.addr | (self.size / 2 - 1)) >> 2) as u64;
+        } else if self.is_tor() {
+            if self.size == usize::MAX {
+                return u64::MAX >> 3;
+            } else {
+                return ((self.addr + self.size) >> 2) as u64;
+            }
+        }
+
+        0
+    }
+}
+
+pub fn napot_region_init<'a>(
+    start: usize,
+    size: usize,
+    perm: u64,
+    allow_overlap: bool,
+) -> Result<usize, Error> {
+    //find available wg region idx
+    let region_idx = get_free_region_idx();
+    if region_idx.is_none() {
+        return Err(Error::MaxReached);
+    }
+
+    let region_idx = region_idx.unwrap();
+    let reg_idx = get_free_reg_idx().unwrap();
+
+    if ((unsafe { REG_BITMAP } & (1 << reg_idx)) != 0) || (reg_idx >= WG_MAX_N_REGION) {
+        return Err(Error::MaxReached);
+    }
+
+    // initialize the region
+    unsafe {
+        REGIONS[region_idx] = Some(Region {
+            size,
+            mode: WGC_CFG_A_NAPOT,
+            addr: start,
+            perm,
+            allow_overlap,
+            index: reg_idx,
+        });
+    };
+
+    unsafe {
+        REGION_DEF_BITMAP |= 1 << region_idx;
+        REG_BITMAP |= 1 << reg_idx;
+    }
+
+    Ok(region_idx)
+}
+
+pub fn get_free_region_idx() -> Option<usize> {
+    return search_rightmost_unset(unsafe { REGION_DEF_BITMAP }, WG_MAX_N_REGION, 0x1);
+}
+
+pub fn get_free_reg_idx() -> Option<usize> {
+    return search_rightmost_unset(unsafe { REG_BITMAP }, WG_MAX_N_REGION, 0x1);
+}
+
+pub fn get_conseq_free_reg_idx() -> Option<usize> {
+    return search_rightmost_unset(unsafe { REG_BITMAP }, WG_MAX_N_REGION, 0x3);
+}
+
+fn search_rightmost_unset(bitmap: usize, max: usize, mask: usize) -> Option<usize> {
+    let mut i = 0;
+    let mut mask = mask;
+
+    while mask < (1 << max) {
+        if (!bitmap & mask) == mask {
+            return Some(i);
+        }
+
+        mask = mask << 1;
+        i += 1;
+    }
+
+    None
+}
+
+pub fn tor_region_init<'a>(
+    start: usize,
+    size: usize,
+    perm: u64,
+    allow_overlap: bool,
+) -> Result<usize, Error> {
+    let region_idx = get_free_region_idx();
+    if region_idx.is_none() {
+        return Err(Error::MaxReached);
+    }
+
+    let reg_idx = get_conseq_free_reg_idx().unwrap();
+    if ((unsafe { REG_BITMAP } & (1 << reg_idx)) != 0)
+        || ((unsafe { REG_BITMAP } & (1 << reg_idx + 1)) != 0)
+        || (reg_idx + 1 > WG_MAX_N_REGION)
+    {
+        return Err(Error::MaxReached);
+    }
+
+    let region_idx = region_idx.unwrap();
+
+    // FIXME: looks incorrect logic below.
+    // initialize the region
+    unsafe {
+        REGIONS[region_idx] = Some(Region {
+            size,
+            mode: WGC_CFG_A_TOR,
+            addr: start,
+            perm,
+            allow_overlap,
+            index: reg_idx,
+        });
+
+        REGION_DEF_BITMAP |= 1 << region_idx;
+        REG_BITMAP |= 1 << reg_idx;
+    }
+    if reg_idx > 0 {
+        unsafe { REG_BITMAP |= 1 << (reg_idx + 1) };
+    }
+
+    Ok(region_idx)
+}
+
+// not used
+pub fn set_wg(region_idx: usize) -> Result<(), Error> {
+    if !is_wg_region_valid(region_idx) {
+        return Err(Error::Invalid);
+    }
+
+    let region = unsafe { REGIONS[region_idx].as_ref().unwrap() };
+    let reg_idx = if region.is_tor() {
+        region.index() + 1
+    } else {
+        region.index()
+    };
+    hprintln!(
+        "set_wg region_idx: {} reg_idx: {} mod: {}",
+        region_idx,
+        region.index(),
+        region.is_tor()
+    );
+
+    if region.is_tor() {
+        unsafe {
+            WGCHECKERS.dram.set_slot_cfg(reg_idx - 1, 0x0);
+            WGCHECKERS
+                .dram
+                .set_slot_addr(reg_idx - 1, (region.addr() >> 2) as u64);
+            WGCHECKERS.dram.set_slot_perm(reg_idx - 1, 0); // RW for w3 only
+        }
+    }
+    unsafe {
+        WGCHECKERS.dram.set_slot_cfg(
+            reg_idx,
+            WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | region.mode,
+        );
+        WGCHECKERS.dram.set_slot_addr(reg_idx, region.wgaddr_val());
+        WGCHECKERS.dram.set_slot_perm(reg_idx, region.perm); // RW for w3 only
+    }
+
+    Ok(())
+}
+
+pub fn reset_wg(region_idx: usize) -> Result<(), Error> {
+    if !is_wg_region_valid(region_idx) {
+        return Err(Error::Invalid);
+    }
+
+    let region = unsafe { REGIONS[region_idx].as_ref().unwrap() };
+    let reg_idx = region.index();
+
+    unsafe {
+        WGCHECKERS.dram.set_slot_cfg(
+            reg_idx,
+            WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | region.mode,
+        );
+        WGCHECKERS.dram.set_slot_addr(reg_idx, region.wgaddr_val());
+        WGCHECKERS.dram.set_slot_perm(reg_idx, 0); // RW for w3 only
+    }
+
+    Ok(())
+}

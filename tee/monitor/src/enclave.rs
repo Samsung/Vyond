@@ -1,5 +1,6 @@
 use crate::cpu;
 use crate::encoding::*;
+use crate::isolator;
 use crate::os_region_id;
 use crate::pmp;
 use crate::spinlock::SpinLock;
@@ -158,7 +159,7 @@ impl Enclave {
         //let _ = pmp::set_keystone(os_region_id(), pmp::PMP_NO_PERM);
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(ref region) = self.regions[memid] {
-                let _ = pmp::set_keystone(region.id, pmp::PMP_ALL_PERM);
+                let _ = isolator::set_isolator(region.id);
             }
         });
 
@@ -170,10 +171,10 @@ impl Enclave {
         // set PMP
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(region) = self.regions[memid].as_ref() {
-                let _ = pmp::set_keystone(region.id, pmp::PMP_NO_PERM);
+                let _ = isolator::reset_isolator(region.id);
             }
         });
-        let _ = pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM);
+        let _ = isolator::set_isolator(os_region_id());
 
         let interrupts = MIP_SSIP | MIP_STIP | MIP_SEIP;
         csr_write!(mideleg, interrupts);
@@ -244,12 +245,11 @@ pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave
 
     // TODO: Check if create_args is valid
 
-    // create a PMP region bound to the enclave
-    if let Ok(region) = pmp::pmp_region_init(
+    // create a PMP/WG region bound to the enclave
+    if let Ok(region) = isolator::create_enclave(
         create_args.epm_region.paddr,
         create_args.epm_region.size,
-        pmp::Priority::Any,
-        false,
+        enclave.id(),
     ) {
         //hprintln!("Found unused pmp slot: {}", region);
         enclave.regions[0] = Some(Region { id: region });
@@ -301,7 +301,7 @@ pub fn destroy_enclave(eid: usize) -> Result<(), Error> {
                 let rid = region.id;
 
                 //1.b free pmp region
-                let _ = pmp::pmp_region_free(rid);
+                let _ = isolator::region_free(rid);
             }
         }
 
