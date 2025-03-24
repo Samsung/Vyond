@@ -1,5 +1,10 @@
+use crate::pmp;
 use crate::wg::*;
+use crate::{os_region_id, sm_region_id};
+//use crate::{Error, ENC_BASE, ENC_SIZE, SMM_BASE, SMM_SIZE};
 use crate::{Error, SMM_BASE, SMM_SIZE};
+use core::sync::atomic::compiler_fence;
+use core::sync::atomic::Ordering;
 #[cfg(feature = "semihosting")]
 use semihosting::hprintln;
 
@@ -8,6 +13,10 @@ pub fn smm_init<'a>() -> Result<usize, Error> {
     return pmp::pmp_region_init(SMM_BASE, SMM_SIZE, pmp::Priority::Top, false);
     #[cfg(feature = "usewg")]
     {
+        let mlwid = csr_read_custom!(0x390);
+        csr_write_custom!(0x390, 2);
+        //csr_write_custom!(0x748, 0xc); // mwiddeleg
+
         return wg_region_init(SMM_BASE, SMM_SIZE, 3 << (TRUSTED_WID * 2), false);
     }
 }
@@ -24,19 +33,29 @@ pub fn osm_init<'a>() -> Result<usize, Error> {
             let nslots = WGCHECKERS.uart.get_nslots();
             WGCHECKERS.uart.set_slot_perm(nslots as usize, 0xf0); // RW for w2, and w1
         }
-        return wg_region_init(SMM_BASE + SMM_SIZE, usize::MAX, 3 << (OS_WID * 2), false);
+        // This region will be accessed by both OS and unprotected user processes.
+        return wg_region_init(
+            //ENC_BASE + ENC_SIZE,
+            SMM_BASE + SMM_SIZE,
+            usize::MAX,
+            (3 << (OS_WID * 2)) | 3,
+            false,
+        );
     }
 }
 
-pub fn create_enclave(start: usize, size: usize, eid: usize) -> Result<usize, Error> {
+pub fn region_init(start: usize, size: usize, eid: usize, shared: bool) -> Result<usize, Error> {
     #[cfg(feature = "usepmp")]
     {
-        pmp::pmp_region_init(start, size, pmp::Priority::Any, false)
+        if shared {
+            pmp::pmp_region_init(start, size, pmp::Priority::Bottom, false)
+        } else {
+            pmp::pmp_region_init(start, size, pmp::Priority::Any, false)
+        }
     }
     #[cfg(feature = "usewg")]
     {
-        wg_region_init(start, size, 3 << eid, true)
-        //wg_region_init(start, size, 3 << eid, false)
+        wg_region_init(start, size, 3 << (eid * 2), true)
     }
 }
 
@@ -136,5 +155,15 @@ pub fn update(region_id: usize) -> Result<(), Error> {
     #[cfg(feature = "usewg")]
     {
         set_wg(region_id)
+    }
+}
+
+pub fn enter_context(eid: usize) {
+    #[cfg(feature = "usewg")]
+    {
+        let mlwid = csr_read_custom!(0x390);
+        csr_write_custom!(0x390, eid);
+        compiler_fence(Ordering::Release);
+        let mlwid = csr_read_custom!(0x390);
     }
 }

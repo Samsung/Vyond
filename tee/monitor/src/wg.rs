@@ -154,13 +154,6 @@ pub fn wg_region_init(
     perm: u64,
     allow_overlap: bool,
 ) -> Result<usize, Error> {
-    hprintln!(
-        "wg_region_init start: {:#x} size: {:#x} perm: {:#x} allow_overlap: {}",
-        start,
-        size,
-        perm,
-        allow_overlap
-    );
     if size == 0 {
         return Err(Error::Invalid);
     }
@@ -171,7 +164,6 @@ pub fn wg_region_init(
         }
     }
 
-    hprintln!("debug-b");
     /* WG granularity check */
     if (size != usize::MAX) && ((size & (PAGE_SIZE - 1)) != 0) {
         return Err(Error::NotPageGranularity);
@@ -185,22 +177,8 @@ pub fn wg_region_init(
     if (size == usize::MAX && start == 0)
         || (((size & (size - 1)) == 0) && ((start & (size - 1)) == 0))
     {
-        hprintln!(
-            "napot_region_init start {:#x} size {:#x} perm {:#x} allow_overlap {}",
-            start,
-            size,
-            perm,
-            allow_overlap
-        );
         return napot_region_init(start, size, perm, allow_overlap);
     } else {
-        hprintln!(
-            "tor_region_init start {:#x} size {:#x} perm {:#x} allow_overlap {}",
-            start,
-            size,
-            perm,
-            allow_overlap
-        );
         return tor_region_init(start, size, perm, allow_overlap);
     }
 }
@@ -450,12 +428,6 @@ pub fn set_wg(region_idx: usize) -> Result<(), Error> {
     } else {
         region.index()
     };
-    hprintln!(
-        "set_wg region_idx: {} reg_idx: {} mod: {}",
-        region_idx,
-        region.index(),
-        region.is_tor()
-    );
 
     if region.is_tor() {
         unsafe {

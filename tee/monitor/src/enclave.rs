@@ -7,6 +7,8 @@ use crate::spinlock::SpinLock;
 use crate::thread;
 use crate::trap::TrapFrame;
 use crate::Error;
+#[cfg(feature = "semihosting")]
+use semihosting::{heprintln, hprintln};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum State {
@@ -15,8 +17,17 @@ pub enum State {
     Destroying,
 }
 
+#[derive(PartialEq, Clone, Copy)]
+pub enum RegionType {
+    RegionInvalid,
+    RegionEPM,
+    RegionUTM,
+    RegionOther,
+}
+
 pub struct Region {
     id: usize,
+    r_type: RegionType,
 }
 
 /* TODO: does not support multithreaded enclave yet */
@@ -85,7 +96,7 @@ impl Enclave {
     const THREAD_INIT: Option<thread::State> = None;
 
     pub fn allocate<'a>(pa_params: RuntimePAParams) -> Result<&'a mut Enclave, Error> {
-        for eid in 0..MAX_ENCLAVES {
+        for eid in 1..MAX_ENCLAVES {
             if unsafe { ENCLAVES[eid].is_none() } {
                 unsafe { ENCLAVES[eid] = Some(Enclave::new(eid, pa_params)) };
                 return Ok(unsafe { ENCLAVES[eid].as_mut().unwrap() });
@@ -130,9 +141,11 @@ impl Enclave {
         //#[cfg(feature = "semihosting")]
         //{
         //    hprintln!(
-        //        "to-enclave: mepc: {:#x}, mhstatus: {:#x}",
+        //        "to-enclave: mepc: {:#x}, mhstatus: {:#x} dram_base: {:#x}, dram_size: {}",
         //        regs.mepc,
-        //        regs.mstatus
+        //        regs.mstatus,
+        //        self.pa_params.dram_base,
+        //        self.pa_params.dram_size,
         //    );
         //}
 
@@ -154,9 +167,10 @@ impl Enclave {
             csr_write!(satp, 0);
         }
 
-        //switch_vector_enclave();
+        switch_vector_enclave();
 
-        //let _ = pmp::set_keystone(os_region_id(), pmp::PMP_NO_PERM);
+        #[cfg(feature = "usepmp")]
+        let _ = pmp::set_keystone(os_region_id(), pmp::PMP_NO_PERM);
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(ref region) = self.regions[memid] {
                 let _ = isolator::set_isolator(region.id);
@@ -195,7 +209,7 @@ impl Enclave {
         //    );
         //}
 
-        //switch_vector_host();
+        switch_vector_host();
 
         let pending = csr_read!(mip);
 
@@ -216,7 +230,7 @@ impl Enclave {
     }
 }
 
-const MAX_ENCLAVES: usize = 8;
+const MAX_ENCLAVES: usize = 8; // FIXME: should be associated with NWORLDS
 
 const INIT_VALUE: Option<Enclave> = None;
 static mut ENCLAVES: [Option<Enclave>; MAX_ENCLAVES] = [INIT_VALUE; MAX_ENCLAVES];
@@ -246,21 +260,41 @@ pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave
     // TODO: Check if create_args is valid
 
     // create a PMP/WG region bound to the enclave
-    if let Ok(region) = isolator::create_enclave(
+    match isolator::region_init(
         create_args.epm_region.paddr,
         create_args.epm_region.size,
         enclave.id(),
+        false,
     ) {
-        //hprintln!("Found unused pmp slot: {}", region);
-        enclave.regions[0] = Some(Region { id: region });
-        enclave.threads[0] = Some(thread::State::new(
-            create_args.epm_region.paddr - 4,
-            (1 << crate::encoding::MSTATUS_MPP_SHIFT) | crate::encoding::MSTATUS_FS,
-        ));
+        Ok(region) => {
+            enclave.regions[0] = Some(Region {
+                id: region,
+                r_type: RegionType::RegionEPM,
+            });
+            enclave.threads[0] = Some(thread::State::new(
+                create_args.epm_region.paddr - 4,
+                (1 << crate::encoding::MSTATUS_MPP_SHIFT) | crate::encoding::MSTATUS_FS,
+            ));
+        }
+        Err(e) => return Err(e),
+    };
 
-        return Ok(enclave);
-    }
-    Err(Error::NoFreeResource)
+    match isolator::region_init(
+        create_args.utm_region.paddr,
+        create_args.utm_region.size,
+        enclave.id(),
+        true,
+    ) {
+        Ok(shared_region) => {
+            enclave.regions[1] = Some(Region {
+                id: shared_region,
+                r_type: RegionType::RegionUTM,
+            });
+        }
+        Err(e) => return Err(e),
+    };
+
+    Ok(enclave)
 }
 
 pub fn find_enclave<'a>(eid: usize) -> Option<&'a mut Enclave> {
@@ -297,6 +331,11 @@ pub fn destroy_enclave(eid: usize) -> Result<(), Error> {
         // requires no lock (single runner)
         for i in 0..MAX_ENCLAVE_REGIONS {
             if let Some(region) = &enclave.regions[i] {
+                if region.r_type == RegionType::RegionInvalid
+                    || region.r_type == RegionType::RegionUTM
+                {
+                    continue;
+                }
                 //1.a Clear all pages
                 let rid = region.id;
 
@@ -335,6 +374,7 @@ pub fn enter_enclave(tf: &mut TrapFrame, eid: usize) -> Result<(), Error> {
         }
 
         enclave.switch_to_enclave(tf, true);
+        //isolator::display_isolator();
 
         return Ok(());
     }
@@ -360,6 +400,7 @@ pub fn resume_enclave(tf: &mut TrapFrame) -> Result<(), Error> {
         }
 
         enclave.switch_to_enclave(tf, false);
+        //isolator::display_isolator();
 
         return Ok(());
     }
@@ -386,6 +427,7 @@ pub fn stop_enclave(tf: &mut TrapFrame, request: usize) -> Result<(), Error> {
         }
 
         enclave.switch_to_host(tf);
+        //isolator::display_isolator();
 
         let ret = match request {
             0/*StopReason::TimerInterrupt*/ => Err(Error::Interrupted),
@@ -414,9 +456,25 @@ pub fn exit_enclave(tf: &mut TrapFrame) -> Result<(), Error> {
         drop(runstate);
 
         enclave.switch_to_host(tf);
+        //isolator::display_isolator();
 
         return Ok(());
     }
 
     Err(Error::Invalid)
+}
+
+fn switch_vector_enclave() {
+    csr_write!(mtvec, trap_vector_enclave);
+}
+
+fn switch_vector_host() {
+    csr_write!(mtvec, _trap_handler);
+}
+
+extern "C" {
+    fn trap_vector_enclave();
+}
+extern "C" {
+    fn _trap_handler();
 }

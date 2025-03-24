@@ -1,3 +1,5 @@
+use crate::isolator;
+use crate::os_region_id;
 use core::arch::asm;
 
 #[macro_export]
@@ -16,6 +18,22 @@ macro_rules! csr_read {
 }
 
 #[macro_export]
+macro_rules! csr_read_custom {
+    ($csr:expr) => {{
+        use core::arch::asm;
+        let res: usize;
+        unsafe {
+            asm!(
+                "csrr {reg}, {csr}",
+                reg = out(reg) res,
+                csr = const $csr,
+            );
+        }
+        res
+    }}
+}
+
+#[macro_export]
 macro_rules! csr_write {
     ($csr:ident, $val:expr) => {{
         use core::arch::asm;
@@ -23,6 +41,20 @@ macro_rules! csr_write {
             asm!(
                 concat!("csrw ", stringify!($csr), ", {reg}"),
                 reg = in(reg) $val,
+            );
+        }
+    }}
+}
+
+#[macro_export]
+macro_rules! csr_write_custom {
+    ($csr:expr , $val:expr) => {{
+        use core::arch::asm;
+        unsafe {
+            asm!(
+            "csrw {csr}, {reg}",
+            csr = const $csr,
+            reg = in(reg) $val,
             );
         }
     }}
@@ -133,9 +165,13 @@ pub fn enter_enclave_context(eid: usize) {
         CPU_STATE[hartid].is_enclave = true;
         CPU_STATE[hartid].eid = eid;
     }
+    isolator::enter_context(eid);
 }
 
 pub fn exit_enclave_context() {
     let hartid = csr_read!(mhartid) as usize;
-    unsafe { CPU_STATE[hartid].is_enclave = false };
+    unsafe {
+        CPU_STATE[hartid].is_enclave = false;
+    };
+    isolator::enter_context(os_region_id());
 }

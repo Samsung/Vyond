@@ -10,6 +10,7 @@ platform-runcmd = qemu-system-riscv$(PLATFORM_RISCV_XLEN) -M virt -m 256M \
 
 # Blobs to build
 FW_TEXT_START=0x80000000
+FW_ENC_SIZE = 0x0 #0x8000000
 FW_DYNAMIC=y
 FW_JUMP=y
 ifeq ($(PLATFORM_RISCV_XLEN), 32)
@@ -17,18 +18,18 @@ ifeq ($(PLATFORM_RISCV_XLEN), 32)
   FW_JUMP_ADDR=$(shell printf "0x%X" $$(($(FW_TEXT_START) + 0x400000)))
 else
   # This needs to be 2MB aligned for 64-bit system
-  FW_JUMP_ADDR=$(shell printf "0x%X" $$(($(FW_TEXT_START) + 0x200000)))
+  FW_JUMP_ADDR=$(shell printf "0x%X" $$(($(FW_TEXT_START) + 0x200000 + $(FW_ENC_SIZE))))
 endif
-FW_JUMP_FDT_ADDR=$(shell printf "0x%X" $$(($(FW_TEXT_START) + 0x2200000)))
+FW_JUMP_FDT_ADDR=$(shell printf "0x%X" $$(($(FW_TEXT_START) + 0x2200000 + $(FW_ENC_SIZE))))
 FW_PAYLOAD=y
 ifeq ($(PLATFORM_RISCV_XLEN), 32)
   # This needs to be 4MB aligned for 32-bit system
   FW_PAYLOAD_OFFSET=0x400000
 else
   # This needs to be 2MB aligned for 64-bit system
-  FW_PAYLOAD_OFFSET=0x200000
+  FW_PAYLOAD_OFFSET=0x200000 # TODO: ADD FW_ENC_SIZE
 endif
-FW_PAYLOAD_FDT_ADDR=$(FW_JUMP_FDT_ADDR)
+FW_PAYLOAD_FDT_ADDR=$(FW_JUMP_FDT_ADDR) # TODO: ADD FW_ENC_SIZE
 ifdef PLATFORM
   platform-genflags-y += "-DTARGET_PLATFORM_HEADER=\"platform/$(PLATFORM)/platform.h\""
 else
@@ -76,3 +77,5 @@ endif
 platform-objs-y += vyond.o
 platform-objs-y += mprv.o
 
+$(info FW_JUMP_ADDR $(FW_JUMP_ADDR))
+$(info FW_JUMP_FDT_ADDR $(FW_JUMP_FDT_ADDR))

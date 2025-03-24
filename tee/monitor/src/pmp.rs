@@ -312,6 +312,31 @@ pub fn set_keystone(region_idx: usize, perm: usize) -> Result<(), Error> {
         _ => return Err(Error::Invalid),
     }
 
+    if region.needs_two_entries() {
+        let reg_idx = reg_idx - 1;
+        let mut pmpcfg = 0;
+        let pmpaddr = region.addr() >> 2;
+        match reg_idx {
+            0 => pmp_set!(0, 0, pmpaddr, pmpcfg),
+            1 => pmp_set!(1, 0, pmpaddr, pmpcfg),
+            2 => pmp_set!(2, 0, pmpaddr, pmpcfg),
+            3 => pmp_set!(3, 0, pmpaddr, pmpcfg),
+            4 => pmp_set!(4, 0, pmpaddr, pmpcfg),
+            5 => pmp_set!(5, 0, pmpaddr, pmpcfg),
+            6 => pmp_set!(6, 0, pmpaddr, pmpcfg),
+            7 => pmp_set!(7, 0, pmpaddr, pmpcfg),
+            8 => pmp_set!(8, 2, pmpaddr, pmpcfg),
+            9 => pmp_set!(9, 2, pmpaddr, pmpcfg),
+            10 => pmp_set!(10, 2, pmpaddr, pmpcfg),
+            11 => pmp_set!(11, 2, pmpaddr, pmpcfg),
+            12 => pmp_set!(12, 2, pmpaddr, pmpcfg),
+            13 => pmp_set!(13, 2, pmpaddr, pmpcfg),
+            14 => pmp_set!(14, 2, pmpaddr, pmpcfg),
+            15 => pmp_set!(15, 2, pmpaddr, pmpcfg),
+            _ => return Err(Error::Invalid),
+        }
+    }
+
     Ok(())
 }
 
@@ -359,7 +384,7 @@ pub fn tor_region_init<'a>(
             mode: PMP_A_TOR,
             addr: start,
             allow_overlap: allow_overlap,
-            index: reg_idx,
+            index: if reg_idx > 0 { reg_idx + 1 } else { reg_idx },
         });
 
         REGION_DEF_BITMAP |= 1 << region_idx;

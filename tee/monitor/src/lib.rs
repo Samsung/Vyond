@@ -25,7 +25,10 @@ pub mod trap;
 pub mod wg;
 
 pub const SMM_BASE: usize = 0x80000000;
-pub const SMM_SIZE: usize = 0x200000;
+pub const SMM_SIZE: usize = 0x200000; // 2 MB
+
+//pub const ENC_BASE: usize = SMM_BASE + SMM_SIZE;
+//pub const ENC_SIZE: usize = 0x800_0000; // 128 MB
 
 #[derive(Debug)]
 pub enum Error {
