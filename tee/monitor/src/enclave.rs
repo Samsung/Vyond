@@ -2,13 +2,12 @@ use crate::cpu;
 use crate::encoding::*;
 use crate::isolator;
 use crate::os_region_id;
-use crate::pmp;
 use crate::spinlock::SpinLock;
 use crate::thread;
 use crate::trap::TrapFrame;
 use crate::Error;
-#[cfg(feature = "semihosting")]
-use semihosting::{heprintln, hprintln};
+//#[cfg(feature = "semihosting")]
+//use semihosting::{heprintln, hprintln};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum State {

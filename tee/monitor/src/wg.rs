@@ -1,7 +1,5 @@
 use crate::Error;
 use crate::PAGE_SIZE;
-#[cfg(feature = "semihosting")]
-use semihosting::{heprintln, hprintln};
 use volatile_register::{RO, RW};
 
 /// General WGC
@@ -25,6 +23,10 @@ pub const WGC_ERRCAUSE_IP_SHIFT: u8 = 63;
 
 pub const WGC_ALL_PERM: usize = (1 << (NWORLDS * 2)) - 1;
 
+pub const WGC_DRAM_BASE: usize = 0x600_0000;
+pub const WGC_FLASH_BASE: usize = 0x600_1000;
+pub const WGC_UART_BASE: usize = 0x600_2000;
+
 /// WGC for Memory
 #[repr(C)]
 pub struct WGCRegisterBlock {
@@ -47,39 +49,42 @@ pub struct WGCSlot {
 }
 
 pub struct WGChecker {
-    pub base: usize,
+    p_wgc: &'static mut WGCRegisterBlock,
+    p_slot_base: usize,
 }
 
 impl WGChecker {
+    pub fn new(base: usize) -> WGChecker {
+        WGChecker {
+            p_wgc: unsafe { &mut *(base as *mut WGCRegisterBlock) },
+            p_slot_base: base + WGC_SLOT_OFFSET,
+        }
+    }
+
     #[inline]
     pub fn get_vendor(&self) -> u32 {
-        let ptr = self.base as *const WGCRegisterBlock;
-        unsafe { (*ptr).vendor.read() }
+        self.p_wgc.vendor.read()
     }
 
     #[inline]
     pub fn get_impid(&self) -> u32 {
-        let ptr = self.base as *const WGCRegisterBlock;
-        unsafe { (*ptr).impid.read() }
+        self.p_wgc.impid.read()
     }
 
     #[inline]
     pub fn get_nslots(&self) -> u32 {
-        let ptr = self.base as *const WGCRegisterBlock;
-        unsafe { (*ptr).nslots.read() }
+        self.p_wgc.nslots.read()
     }
 
     #[inline]
     pub fn get_errcause(&self) -> u64 {
-        let ptr = self.base as *const WGCRegisterBlock;
-        unsafe { (*ptr).errcause.read() }
+        self.p_wgc.errcause.read()
     }
 
     #[inline]
-    pub fn set_errcause(&mut self, wid: u8, r: bool, w: bool, be: bool, ip: bool) {
-        let ptr = self.base as *mut WGCRegisterBlock;
+    pub fn set_errcause(&self, wid: u8, r: bool, w: bool, be: bool, ip: bool) {
         unsafe {
-            (*ptr).errcause.modify(|v| {
+            self.p_wgc.errcause.modify(|v| {
                 v | ((wid as u64)
                     | (r as u64) << WGC_ERRCAUSE_R_SHIFT
                     | (w as u64) << WGC_ERRCAUSE_W_SHIFT
@@ -91,62 +96,50 @@ impl WGChecker {
 
     #[inline]
     pub fn get_erraddr(&self) -> u64 {
-        let ptr = self.base as *const WGCRegisterBlock;
-        unsafe { (*ptr).erraddr.read() }
+        self.p_wgc.erraddr.read()
     }
 
     #[inline]
-    pub fn set_erraddr(&mut self, addr: u64) {
-        let ptr = self.base as *mut WGCRegisterBlock;
-        unsafe { (*ptr).erraddr.write(addr) }
+    pub fn set_erraddr(&self, addr: u64) {
+        unsafe { self.p_wgc.erraddr.write(addr) }
     }
 
     #[inline]
     pub fn get_slot_addr(&self, idx: usize) -> u64 {
-        // FIXME: This does not work.. why?
-        //let ptr = self.base as *mut WGCRegisterBlock;
-        //unsafe { (*ptr).slots[idx].addr.read() }
-        let ptr = (self.base + WGC_SLOT_OFFSET + idx * WGC_SLOT_SIZE) as *const WGCSlot;
+        let ptr = (self.p_slot_base + idx * WGC_SLOT_SIZE) as *const WGCSlot;
         unsafe { (*ptr).addr.read() }
     }
+
     #[inline]
-    pub fn set_slot_addr(&mut self, idx: usize, addr: u64) {
-        let ptr = (self.base + WGC_SLOT_OFFSET + idx * WGC_SLOT_SIZE) as *const WGCSlot;
+    pub fn set_slot_addr(&self, idx: usize, addr: u64) {
+        let ptr = (self.p_slot_base + idx * WGC_SLOT_SIZE) as *const WGCSlot;
         unsafe { (*ptr).addr.write(addr) }
     }
+
     #[inline]
     pub fn get_slot_perm(&self, idx: usize) -> u64 {
-        let ptr = (self.base + WGC_SLOT_OFFSET + idx * WGC_SLOT_SIZE) as *const WGCSlot;
+        let ptr = (self.p_slot_base + idx * WGC_SLOT_SIZE) as *const WGCSlot;
         unsafe { (*ptr).perm.read() }
     }
+
     #[inline]
-    pub fn set_slot_perm(&mut self, idx: usize, perm: u64) {
-        let ptr = (self.base + WGC_SLOT_OFFSET + idx * WGC_SLOT_SIZE) as *const WGCSlot;
+    pub fn set_slot_perm(&self, idx: usize, perm: u64) {
+        let ptr = (self.p_slot_base + idx * WGC_SLOT_SIZE) as *const WGCSlot;
         unsafe { (*ptr).perm.write(perm) }
     }
+
     #[inline]
     pub fn get_slot_cfg(&self, idx: usize) -> u32 {
-        let ptr = (self.base + WGC_SLOT_OFFSET + idx * WGC_SLOT_SIZE) as *const WGCSlot;
+        let ptr = (self.p_slot_base + idx * WGC_SLOT_SIZE) as *const WGCSlot;
         unsafe { (*ptr).cfg.read() }
     }
+
     #[inline]
-    pub fn set_slot_cfg(&mut self, idx: usize, cfg: u32) {
-        let ptr = (self.base + WGC_SLOT_OFFSET + idx * WGC_SLOT_SIZE) as *const WGCSlot;
+    pub fn set_slot_cfg(&self, idx: usize, cfg: u32) {
+        let ptr = (self.p_slot_base + idx * WGC_SLOT_SIZE) as *const WGCSlot;
         unsafe { (*ptr).cfg.write(cfg) }
     }
 }
-
-pub struct WGCheckers {
-    pub dram: WGChecker,
-    pub flash: WGChecker,
-    pub uart: WGChecker,
-}
-
-pub static mut WGCHECKERS: WGCheckers = WGCheckers {
-    dram: WGChecker { base: 0x600_0000 },
-    flash: WGChecker { base: 0x600_1000 },
-    uart: WGChecker { base: 0x600_2000 },
-};
 
 pub fn wg_region_init(
     start: usize,
@@ -429,23 +422,18 @@ pub fn set_wg(region_idx: usize) -> Result<(), Error> {
         region.index()
     };
 
+    let dram = WGChecker::new(WGC_DRAM_BASE);
     if region.is_tor() {
-        unsafe {
-            WGCHECKERS.dram.set_slot_cfg(reg_idx - 1, 0x0);
-            WGCHECKERS
-                .dram
-                .set_slot_addr(reg_idx - 1, (region.addr() >> 2) as u64);
-            WGCHECKERS.dram.set_slot_perm(reg_idx - 1, 0); // RW for w3 only
-        }
+        dram.set_slot_cfg(reg_idx - 1, 0x0);
+        dram.set_slot_addr(reg_idx - 1, (region.addr() >> 2) as u64);
+        dram.set_slot_perm(reg_idx - 1, 0); // RW for w3 only
     }
-    unsafe {
-        WGCHECKERS.dram.set_slot_cfg(
-            reg_idx,
-            WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | region.mode,
-        );
-        WGCHECKERS.dram.set_slot_addr(reg_idx, region.wgaddr_val());
-        WGCHECKERS.dram.set_slot_perm(reg_idx, region.perm); // RW for w3 only
-    }
+    dram.set_slot_cfg(
+        reg_idx,
+        WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | region.mode,
+    );
+    dram.set_slot_addr(reg_idx, region.wgaddr_val());
+    dram.set_slot_perm(reg_idx, region.perm); // RW for w3 only
 
     Ok(())
 }
@@ -458,14 +446,13 @@ pub fn reset_wg(region_idx: usize) -> Result<(), Error> {
     let region = unsafe { REGIONS[region_idx].as_ref().unwrap() };
     let reg_idx = region.index();
 
-    unsafe {
-        WGCHECKERS.dram.set_slot_cfg(
-            reg_idx,
-            WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | region.mode,
-        );
-        WGCHECKERS.dram.set_slot_addr(reg_idx, region.wgaddr_val());
-        WGCHECKERS.dram.set_slot_perm(reg_idx, 0); // RW for w3 only
-    }
+    let dram = WGChecker::new(WGC_DRAM_BASE);
+    dram.set_slot_cfg(
+        reg_idx,
+        WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | region.mode,
+    );
+    dram.set_slot_addr(reg_idx, region.wgaddr_val());
+    dram.set_slot_perm(reg_idx, 0); // RW for w3 only
 
     Ok(())
 }

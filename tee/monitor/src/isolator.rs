@@ -1,5 +1,7 @@
+#[cfg(feature = "usepmp")]
 use crate::pmp;
 use crate::wg::*;
+#[cfg(feature = "usepmp")]
 use crate::{os_region_id, sm_region_id};
 //use crate::{Error, ENC_BASE, ENC_SIZE, SMM_BASE, SMM_SIZE};
 use crate::{Error, SMM_BASE, SMM_SIZE};
@@ -13,9 +15,9 @@ pub fn smm_init<'a>() -> Result<usize, Error> {
     return pmp::pmp_region_init(SMM_BASE, SMM_SIZE, pmp::Priority::Top, false);
     #[cfg(feature = "usewg")]
     {
-        let mlwid = csr_read_custom!(0x390);
-        csr_write_custom!(0x390, 2);
-        //csr_write_custom!(0x748, 0xc); // mwiddeleg
+        csr_write_custom!(0x390, 2); // Set mlwid
+
+        //csr_write_custom!(0x748, 0xc); // Set mwiddeleg
 
         return wg_region_init(SMM_BASE, SMM_SIZE, 3 << (TRUSTED_WID * 2), false);
     }
@@ -27,12 +29,12 @@ pub fn osm_init<'a>() -> Result<usize, Error> {
 
     #[cfg(feature = "usewg")]
     {
-        unsafe {
-            let nslots = WGCHECKERS.flash.get_nslots();
-            WGCHECKERS.flash.set_slot_perm(nslots as usize, 0xf0); // RW for w2, and w1
-            let nslots = WGCHECKERS.uart.get_nslots();
-            WGCHECKERS.uart.set_slot_perm(nslots as usize, 0xf0); // RW for w2, and w1
-        }
+        let flash = WGChecker::new(WGC_FLASH_BASE);
+        flash.set_slot_perm(flash.get_nslots() as usize, 0xf0);
+
+        let uart = WGChecker::new(WGC_UART_BASE);
+        uart.set_slot_perm(uart.get_nslots() as usize, 0xf0);
+
         // This region will be accessed by both OS and unprotected user processes.
         return wg_region_init(
             //ENC_BASE + ENC_SIZE,
@@ -95,49 +97,48 @@ pub fn region_free(region_idx: usize) -> Result<(), Error> {
 pub fn display_isolator() {
     #[cfg(feature = "usewg")]
     {
-        unsafe {
-            let vendor = WGCHECKERS.dram.get_vendor();
-            let impid = WGCHECKERS.dram.get_impid();
-            let nslots = WGCHECKERS.dram.get_nslots();
-            let errcause = WGCHECKERS.dram.get_errcause();
-            let erraddr = WGCHECKERS.dram.get_erraddr();
+        let dram = WGChecker::new(WGC_DRAM_BASE);
+        let vendor = dram.get_vendor();
+        let impid = dram.get_impid();
+        let nslots = dram.get_nslots();
+        let errcause = dram.get_errcause();
+        let erraddr = dram.get_erraddr();
+
+        hprintln!(
+            "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
+            vendor,
+            impid,
+            nslots,
+            errcause,
+            erraddr
+        );
+        let vendor = dram.get_vendor();
+        let impid = dram.get_impid();
+        let nslots = dram.get_nslots();
+        let errcause = dram.get_errcause();
+        let erraddr = dram.get_erraddr();
+
+        hprintln!(
+            "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
+            vendor,
+            impid,
+            nslots,
+            errcause,
+            erraddr
+        );
+
+        for idx in 0..(nslots + 1) {
+            let addr = dram.get_slot_addr(idx as usize);
+            let cfg = dram.get_slot_cfg(idx as usize);
+            let perm = dram.get_slot_perm(idx as usize);
 
             hprintln!(
-                "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
-                vendor,
-                impid,
-                nslots,
-                errcause,
-                erraddr
+                "[WGC][DRAM][Slot-{}] cfg: {:#x} addr: {:#x} perm: {:#x}",
+                idx as usize,
+                cfg,
+                addr,
+                perm
             );
-            let vendor = WGCHECKERS.dram.get_vendor();
-            let impid = WGCHECKERS.dram.get_impid();
-            let nslots = WGCHECKERS.dram.get_nslots();
-            let errcause = WGCHECKERS.dram.get_errcause();
-            let erraddr = WGCHECKERS.dram.get_erraddr();
-
-            hprintln!(
-                "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
-                vendor,
-                impid,
-                nslots,
-                errcause,
-                erraddr
-            );
-
-            for idx in 0..(nslots + 1) {
-                let addr = WGCHECKERS.dram.get_slot_addr(idx as usize);
-                let cfg = WGCHECKERS.dram.get_slot_cfg(idx as usize);
-                let perm = WGCHECKERS.dram.get_slot_perm(idx as usize);
-
-                hprintln!(
-                    "[WGC][DRAM][Slot-{}] cfg: {:#x} addr: {:#x} perm: {:#x}",
-                    idx as usize,
-                    cfg,
-                    addr,
-                    perm
-                );
-            }
         }
     }
 }
@@ -161,9 +162,7 @@ pub fn update(region_id: usize) -> Result<(), Error> {
 pub fn enter_context(eid: usize) {
     #[cfg(feature = "usewg")]
     {
-        let mlwid = csr_read_custom!(0x390);
         csr_write_custom!(0x390, eid);
         compiler_fence(Ordering::Release);
-        let mlwid = csr_read_custom!(0x390);
     }
 }
