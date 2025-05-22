@@ -286,6 +286,12 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 		return regs;
 	}
 
+	if (mcause == CAUSE_BREAKPOINT) {
+		rc = SBI_ENOTSUPP;
+		msg = "cannot handle breakpoint here";
+		goto trap_error;
+	}
+
 	switch (mcause) {
 	case CAUSE_ILLEGAL_INSTRUCTION:
 		rc  = sbi_illegal_insn_handler(mtval, regs);

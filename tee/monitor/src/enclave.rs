@@ -2,12 +2,11 @@ use crate::cpu;
 use crate::encoding::*;
 use crate::isolator;
 use crate::os_region_id;
+use crate::pmp;
 use crate::spinlock::SpinLock;
 use crate::thread;
 use crate::trap::TrapFrame;
 use crate::Error;
-//#[cfg(feature = "semihosting")]
-//use semihosting::{heprintln, hprintln};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum State {
@@ -137,8 +136,6 @@ impl Enclave {
         thread.swap_prev_mepc(regs, regs.mepc);
         thread.swap_prev_mstatus(regs, regs.mstatus);
 
-        //#[cfg(feature = "semihosting")]
-        //{
         //    hprintln!(
         //        "to-enclave: mepc: {:#x}, mhstatus: {:#x} dram_base: {:#x}, dram_size: {}",
         //        regs.mepc,
@@ -146,7 +143,6 @@ impl Enclave {
         //        self.pa_params.dram_base,
         //        self.pa_params.dram_size,
         //    );
-        //}
 
         let interrupts = 0;
         csr_write!(mideleg, interrupts);
@@ -199,14 +195,11 @@ impl Enclave {
         thread.swap_prev_mepc(regs, regs.mepc);
         thread.swap_prev_mstatus(regs, regs.mstatus);
 
-        //#[cfg(feature = "semihosting")]
-        //{
         //    hprintln!(
         //        "to-host: mepc: {:#x}, mhstatus: {:#x}",
         //        regs.mepc,
         //        regs.mstatus
         //    );
-        //}
 
         switch_vector_host();
 

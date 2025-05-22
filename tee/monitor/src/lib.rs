@@ -5,8 +5,6 @@ use core::sync::atomic::compiler_fence;
 use core::sync::atomic::Ordering;
 
 use once_cell::OnceCell;
-
-#[cfg(feature = "semihosting")]
 use semihosting::{heprintln, hprintln};
 
 #[macro_use]

@@ -35,4 +35,4 @@ cc = "1.0"
 semihosting = ["semihosting/machine-mode"]
 usepmp = []
 usewg = []
-default = ["usewg", "semihosting"]
+default = ["usepmp"]

@@ -64,9 +64,3 @@ pub extern "C" fn sbi_sm_exit_enclave(regs: &mut TrapFrame) -> isize {
     };
     ret as isize
 }
-
-#[cfg(not(feature = "semihosting"))]
-#[link(name = "sbi_printf")]
-extern "C" {
-    pub fn sbi_printf(format: *const c_char, ...) -> i32;
-}

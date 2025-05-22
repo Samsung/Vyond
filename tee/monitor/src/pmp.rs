@@ -1,8 +1,6 @@
 use crate::encoding::{PMP_A_NAPOT, PMP_A_TOR, PMP_R, PMP_W, PMP_X};
 use crate::Error;
 use crate::PAGE_SIZE;
-
-#[cfg(feature = "semihosting")]
 use semihosting::hprintln;
 
 #[derive(PartialEq)]

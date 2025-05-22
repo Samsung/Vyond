@@ -3,11 +3,11 @@ use crate::pmp;
 use crate::wg::*;
 #[cfg(feature = "usepmp")]
 use crate::{os_region_id, sm_region_id};
-//use crate::{Error, ENC_BASE, ENC_SIZE, SMM_BASE, SMM_SIZE};
 use crate::{Error, SMM_BASE, SMM_SIZE};
+#[cfg(feature = "usewg")]
 use core::sync::atomic::compiler_fence;
+#[cfg(feature = "usewg")]
 use core::sync::atomic::Ordering;
-#[cfg(feature = "semihosting")]
 use semihosting::hprintln;
 
 pub fn smm_init<'a>() -> Result<usize, Error> {
@@ -95,51 +95,48 @@ pub fn region_free(region_idx: usize) -> Result<(), Error> {
 }
 
 pub fn display_isolator() {
-    #[cfg(feature = "usewg")]
-    {
-        let dram = WGChecker::new(WGC_DRAM_BASE);
-        let vendor = dram.get_vendor();
-        let impid = dram.get_impid();
-        let nslots = dram.get_nslots();
-        let errcause = dram.get_errcause();
-        let erraddr = dram.get_erraddr();
+    let dram = WGChecker::new(WGC_DRAM_BASE);
+    let vendor = dram.get_vendor();
+    let impid = dram.get_impid();
+    let nslots = dram.get_nslots();
+    let errcause = dram.get_errcause();
+    let erraddr = dram.get_erraddr();
+
+    hprintln!(
+        "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
+        vendor,
+        impid,
+        nslots,
+        errcause,
+        erraddr
+    );
+    let vendor = dram.get_vendor();
+    let impid = dram.get_impid();
+    let nslots = dram.get_nslots();
+    let errcause = dram.get_errcause();
+    let erraddr = dram.get_erraddr();
+
+    hprintln!(
+        "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
+        vendor,
+        impid,
+        nslots,
+        errcause,
+        erraddr
+    );
+
+    for idx in 0..(nslots + 1) {
+        let addr = dram.get_slot_addr(idx as usize);
+        let cfg = dram.get_slot_cfg(idx as usize);
+        let perm = dram.get_slot_perm(idx as usize);
 
         hprintln!(
-            "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
-            vendor,
-            impid,
-            nslots,
-            errcause,
-            erraddr
+            "[WGC][DRAM][Slot-{}] cfg: {:#x} addr: {:#x} perm: {:#x}",
+            idx as usize,
+            cfg,
+            addr,
+            perm
         );
-        let vendor = dram.get_vendor();
-        let impid = dram.get_impid();
-        let nslots = dram.get_nslots();
-        let errcause = dram.get_errcause();
-        let erraddr = dram.get_erraddr();
-
-        hprintln!(
-            "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
-            vendor,
-            impid,
-            nslots,
-            errcause,
-            erraddr
-        );
-
-        for idx in 0..(nslots + 1) {
-            let addr = dram.get_slot_addr(idx as usize);
-            let cfg = dram.get_slot_cfg(idx as usize);
-            let perm = dram.get_slot_perm(idx as usize);
-
-            hprintln!(
-                "[WGC][DRAM][Slot-{}] cfg: {:#x} addr: {:#x} perm: {:#x}",
-                idx as usize,
-                cfg,
-                addr,
-                perm
-            );
-        }
     }
 }
 
