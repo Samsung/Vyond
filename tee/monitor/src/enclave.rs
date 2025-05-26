@@ -94,7 +94,7 @@ impl Enclave {
     const THREAD_INIT: Option<thread::State> = None;
 
     pub fn allocate<'a>(pa_params: RuntimePAParams) -> Result<&'a mut Enclave, Error> {
-        for eid in 1..MAX_ENCLAVES {
+        for eid in 0..MAX_ENCLAVES {
             if unsafe { ENCLAVES[eid].is_none() } {
                 unsafe { ENCLAVES[eid] = Some(Enclave::new(eid, pa_params)) };
                 return Ok(unsafe { ENCLAVES[eid].as_mut().unwrap() });
