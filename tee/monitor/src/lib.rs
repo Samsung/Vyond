@@ -23,10 +23,7 @@ pub mod trap;
 pub mod wg;
 
 pub const SMM_BASE: usize = 0x80000000;
-pub const SMM_SIZE: usize = 0x200000; // 2 MB
-
-//pub const ENC_BASE: usize = SMM_BASE + SMM_SIZE;
-//pub const ENC_SIZE: usize = 0x800_0000; // 128 MB
+pub const SMM_SIZE: usize = 0x200000;
 
 #[derive(Debug)]
 pub enum Error {
@@ -111,12 +108,14 @@ pub extern "C" fn sm_init(cold_boot: bool) -> isize {
         }
 
         sm_init_done();
+
         compiler_fence(Ordering::Release);
     }
 
     /* wait until cold-boot hart finishes */
     sm_wait_for_completion();
 
+    // FIXME: WG needs to execute below once by a trusted hard
     let _ = isolator::update(sm_region_id());
     let _ = isolator::update(os_region_id());
     isolator::display_isolator();

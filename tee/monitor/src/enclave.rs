@@ -127,22 +127,12 @@ impl Enclave {
     }
 
     pub fn switch_to_enclave(&mut self, regs: &mut TrapFrame, load_parameters: bool) {
-        //let hartid = csr_read!(mhartid) as usize;
-
         /* save host context */
         let thread = &mut self.threads[0].as_mut().unwrap();
 
         thread.swap_prev_state(regs);
         thread.swap_prev_mepc(regs, regs.mepc);
         thread.swap_prev_mstatus(regs, regs.mstatus);
-
-        //    hprintln!(
-        //        "to-enclave: mepc: {:#x}, mhstatus: {:#x} dram_base: {:#x}, dram_size: {}",
-        //        regs.mepc,
-        //        regs.mstatus,
-        //        self.pa_params.dram_base,
-        //        self.pa_params.dram_size,
-        //    );
 
         let interrupts = 0;
         csr_write!(mideleg, interrupts);
@@ -194,12 +184,6 @@ impl Enclave {
         thread.swap_prev_state(regs);
         thread.swap_prev_mepc(regs, regs.mepc);
         thread.swap_prev_mstatus(regs, regs.mstatus);
-
-        //    hprintln!(
-        //        "to-host: mepc: {:#x}, mhstatus: {:#x}",
-        //        regs.mepc,
-        //        regs.mstatus
-        //    );
 
         switch_vector_host();
 
@@ -366,7 +350,6 @@ pub fn enter_enclave(tf: &mut TrapFrame, eid: usize) -> Result<(), Error> {
         }
 
         enclave.switch_to_enclave(tf, true);
-        //isolator::display_isolator();
 
         return Ok(());
     }
@@ -392,7 +375,6 @@ pub fn resume_enclave(tf: &mut TrapFrame) -> Result<(), Error> {
         }
 
         enclave.switch_to_enclave(tf, false);
-        //isolator::display_isolator();
 
         return Ok(());
     }
@@ -419,7 +401,6 @@ pub fn stop_enclave(tf: &mut TrapFrame, request: usize) -> Result<(), Error> {
         }
 
         enclave.switch_to_host(tf);
-        //isolator::display_isolator();
 
         let ret = match request {
             0/*StopReason::TimerInterrupt*/ => Err(Error::Interrupted),
@@ -448,7 +429,6 @@ pub fn exit_enclave(tf: &mut TrapFrame) -> Result<(), Error> {
         drop(runstate);
 
         enclave.switch_to_host(tf);
-        //isolator::display_isolator();
 
         return Ok(());
     }

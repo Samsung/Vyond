@@ -37,7 +37,6 @@ pub fn osm_init<'a>() -> Result<usize, Error> {
 
         // This region will be accessed by both OS and unprotected user processes.
         return wg_region_init(
-            //ENC_BASE + ENC_SIZE,
             SMM_BASE + SMM_SIZE,
             usize::MAX,
             (3 << (OS_WID * 2)) | 3,
