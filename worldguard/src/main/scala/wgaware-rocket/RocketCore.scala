@@ -924,8 +924,7 @@ class WGRocket(tile: WGRocketTile)(implicit p: Parameters) extends CoreModule()(
   }
   else {
     when (csr.io.trace(0).valid) {
-      printf("C%d: %d [%d] pc=[%x] W[r%d=%x][%d] R[r%d=%x] R[r%d=%x] inst=[%x] DASM(%x)\n",
-         io.hartid, coreMonitorBundle.timer, coreMonitorBundle.valid,
+      printf("C%d: %d [%d] pc=[%x] W[r%d=%x][%d] R[r%d=%x] R[r%d=%x] inst=[%x] wid=[%x] DASM(%x)\n",
          coreMonitorBundle.pc,
          Mux(wb_ctrl.wxd || wb_ctrl.wfd, coreMonitorBundle.wrdst, 0.U),
          Mux(coreMonitorBundle.wrenx, coreMonitorBundle.wrdata, 0.U),
@@ -934,7 +933,7 @@ class WGRocket(tile: WGRocketTile)(implicit p: Parameters) extends CoreModule()(
          Mux(wb_ctrl.rxs1 || wb_ctrl.rfs1, coreMonitorBundle.rd0val, 0.U),
          Mux(wb_ctrl.rxs2 || wb_ctrl.rfs2, coreMonitorBundle.rd1src, 0.U),
          Mux(wb_ctrl.rxs2 || wb_ctrl.rfs2, coreMonitorBundle.rd1val, 0.U),
-         coreMonitorBundle.inst, coreMonitorBundle.inst)
+         coreMonitorBundle.inst, csr.io.wid, coreMonitorBundle.inst)
     }
   }
 

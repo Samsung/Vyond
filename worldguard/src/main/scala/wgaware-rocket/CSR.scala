@@ -353,7 +353,7 @@ class WGCSRFile(
 
 
   io.wid := Mux(reg_mstatus.prv === PRV.M.U, reg_mwid,
-    Mux(reg_mstatus.prv === PRV.S.U, reg_mlwid, reg_slwid))
+    Mux(reg_mstatus.prv === PRV.S.U, reg_mlwid, Mux(reg_mwiddeleg === 0.U, reg_mlwid, reg_slwid)))
 
   val isaMaskString =
     (if (usingMulDiv) "M" else "") +
