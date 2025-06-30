@@ -30,7 +30,7 @@ def validate_absolute_path(path):
     return path
 
 def buildWGRocketSim(args):
-    cmd = f'cd {chipyard_root}/sims/verilator; make CONFIG=WGRocketConfig'
+    cmd = f'cd {chipyard_root}/sims/verilator; make CONFIG={args.config}'
     if args.debug:
         cmd = cmd + ' debug'
     os.system(cmd)
@@ -39,7 +39,7 @@ def runWGRocketSim(args):
     runcmd = 'run-binary'
     if args.debug:
         runcmd = runcmd + '-debug'
-    cmd = f'cd {chipyard_root}/sims/verilator; make CONFIG=WGRocketConfig {runcmd} BINARY={args.program_path}'
+    cmd = f'cd {chipyard_root}/sims/verilator; make CONFIG={args.config} {runcmd} BINARY={args.program_path}'
     os.system(cmd)
 
 def buildWGRocketFPGA(args):
@@ -101,6 +101,8 @@ def main(argv: List[str] = None):
     #################################################################
     parser_buildWGRocketSim = subparsers.add_parser('build-wgrocket-sim', help='Build WG-Aware Rocket RTL Simulation')
     parser_buildWGRocketSim.add_argument('--debug', action='store_true', default=False, help="build with debugging symbol")
+    parser_buildWGRocketSim.add_argument('--config', type=str, default="WGRocketConfig", help="chipyard config")
+
     parser_buildWGRocketSim.set_defaults(func=buildWGRocketSim)
     
     #################################################################
@@ -108,6 +110,7 @@ def main(argv: List[str] = None):
     #################################################################
     parser_runWGRocketSim = subparsers.add_parser('run-wgrocket-sim', help='Run WG-Aware Rocket RTL Simulation')
     parser_runWGRocketSim.add_argument('--debug', action='store_true', default=False, help="run with debugging symbol")
+    parser_runWGRocketSim.add_argument('--config', type=str, default="WGRocketConfig", help="chipyard config")
     parser_runWGRocketSim.add_argument("program_path", type=validate_absolute_path, help="Absolute Program path to run")
     parser_runWGRocketSim.set_defaults(func=runWGRocketSim)
     

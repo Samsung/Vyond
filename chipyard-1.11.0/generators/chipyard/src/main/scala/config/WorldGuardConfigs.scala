@@ -19,5 +19,6 @@ class WGRocketConfig extends Config(
 
 class WGRocketAndRocketWithWGM extends Config(
   new worldguard.WithWorldGuard(nWorlds = 4, nSlots = 4) ++
-  new worldguard.WithOneWGAwareRocketThreeRocketWithWGMarker ++
+  new worldguard.WithOneWGAwareRocketOneRocketWithWGMarker++
+  //new worldguard.WithOneWGAwareRocketThreeRocketWithWGMarker ++
   new chipyard.config.AbstractConfig)

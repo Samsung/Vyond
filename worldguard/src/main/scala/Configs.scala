@@ -162,7 +162,7 @@ class WithWGRocketNBigCores(
   ))
 }
 
-class WithOneWGAwareRocketThreeRocketWithWGMarker(
+class WithOneWGAwareRocketOneRocketWithWGMarker(
   location: HierarchicalLocation,
   crossing: RocketCrossingParams,
 ) extends Config((site, here, up) => {
@@ -198,12 +198,12 @@ class WithOneWGAwareRocketThreeRocketWithWGMarker(
         rowBits = site(SystemBusKey).beatBits,
         blockBytes = site(CacheBlockBytes))))
 
-    List.tabulate(4)(i => {
+    List.tabulate(2)(i => {
       i match {
-        case 3 => {
+        case _ => {
           WGAwareRocketTileAttachParams(wgaware.copy(tileId = i + idOffset), crossing)
         }
-        case _ => {
+        case 0 => {
           WGMRocketTileAttachParams(
             rocketWithWGM.copy(tileId = i + idOffset),
             crossing,
