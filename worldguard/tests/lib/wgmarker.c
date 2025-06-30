@@ -23,3 +23,10 @@ void wgm_print_vendor_reg(uintptr_t base) {
 #endif
 }
 
+void wgm_set_wid(uintptr_t base, uint8_t wid) {
+  reg_write8(base + WGM_WID, wid);
+}
+
+uint8_t wgm_get_wid(uintptr_t base) {
+  return reg_read8(base + WGM_WID);
+}

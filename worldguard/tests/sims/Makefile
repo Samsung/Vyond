@@ -43,12 +43,15 @@ TEST_OBJ = $(patsubst $(TEST_SRC_DIR)/%.c, %.o, $(TEST_SRC))
 
 include libgloss.mk
 
-PROGRAMS = icache  														\
-  				 multiple_permissions_on_cacheline 	\
-  				 overwrite_stackframe 							\
-  				 raw_cacheline 											\
-  				 read_unauthorized_cacheline1 			\
-  				 read_unauthorized_cacheline2 
+PROGRAMS = icache                             \
+  				 multiple_permissions_on_cacheline  \
+  				 overwrite_stackframe               \
+  				 raw_cacheline                      \
+  				 read_unauthorized_cacheline1       \
+  				 read_unauthorized_cacheline2       \
+					 markertest                         \
+					 markertest2                        \
+					 markertest3
 .DEFAULT_GOAL := default
 
 
