@@ -1,164 +1,221 @@
-#[cfg(feature = "usepmp")]
+#[cfg(any(feature = "isolator_pmp", feature = "isolator_hybrid"))]
 use crate::pmp;
-use crate::wg::*;
-#[cfg(feature = "usepmp")]
-use crate::{os_region_id, sm_region_id};
-use crate::{Error, SMM_BASE, SMM_SIZE};
-#[cfg(feature = "usewg")]
+#[cfg(any(feature = "isolator_wg", feature = "isolator_hybrid"))]
+use crate::wg;
+use crate::{Error, OnceCell};
 use core::sync::atomic::compiler_fence;
-#[cfg(feature = "usewg")]
 use core::sync::atomic::Ordering;
-use semihosting::hprintln;
 
-pub fn smm_init<'a>() -> Result<usize, Error> {
-    #[cfg(feature = "usepmp")]
-    return pmp::pmp_region_init(SMM_BASE, SMM_SIZE, pmp::Priority::Top, false);
-    #[cfg(feature = "usewg")]
-    {
-        csr_write_custom!(0x390, 2); // Set mlwid
+pub const SMM_BASE: usize = 0x80000000;
+pub const SMM_SIZE: usize = 0x200000;
+pub const OSM_BASE: usize = SMM_BASE + SMM_SIZE;
 
-        //csr_write_custom!(0x748, 0xc); // Set mwiddeleg
+unsafe impl<T> Sync for OnceCell<T> {}
 
-        return wg_region_init(SMM_BASE, SMM_SIZE, 3 << (TRUSTED_WID * 2), false);
+pub const PAGE_SIZE: usize = 4096;
+
+static SM_INIT_DONE: OnceCell<bool> = OnceCell::new();
+static SM_REGION_ID: OnceCell<usize> = OnceCell::new();
+static OS_REGION_ID: OnceCell<usize> = OnceCell::new();
+
+pub fn os_region_id() -> usize {
+    *OS_REGION_ID.get().unwrap()
+}
+
+
+pub fn sm_region_id() -> usize {
+    *SM_REGION_ID.get().unwrap()
+}
+
+pub fn sm_init_done() {
+    SM_INIT_DONE.set(true);
+}
+
+pub fn sm_wait_for_completion() {
+    while !SM_INIT_DONE.get().unwrap() {
+        compiler_fence(Ordering::Release);
     }
 }
 
-pub fn osm_init<'a>() -> Result<usize, Error> {
-    #[cfg(feature = "usepmp")]
-    return pmp::pmp_region_init(0, usize::MAX, pmp::Priority::Bottom, true);
-
-    #[cfg(feature = "usewg")]
+pub fn smm_init<'a>() -> Result<(), Error> {
+    #[cfg(feature = "isolator_pmp")]
     {
-        let flash = WGChecker::new(WGC_FLASH_BASE);
-        flash.set_slot_perm(flash.get_nslots() as usize, 0xf0);
+        let region = pmp::region_init(SMM_BASE, SMM_SIZE, pmp::Priority::Top, false)?;
+        SM_REGION_ID.set(region);
+        Ok(())
+    }
+    #[cfg(feature = "isolator_wg")]
+    {
+        csr_write_custom!(0x390, 2); // Set mlwid
 
-        let uart = WGChecker::new(WGC_UART_BASE);
-        uart.set_slot_perm(uart.get_nslots() as usize, 0xf0);
+        let flash = wg::WGChecker::new(wg::WGC_FLASH_BASE);
+        flash.set_slot_perm(flash.get_nslots() as usize, 0xff);
+        let uart = wg::WGChecker::new(wg::WGC_UART_BASE);
+        uart.set_slot_perm(uart.get_nslots() as usize, 0xff);
 
+        let region = wg::region_init(SMM_BASE, SMM_SIZE, 3 << (wg::TRUSTED_WID * 2), false)?;
+        wg::set_wg(region)?;
+        SM_REGION_ID.set(region);
+
+        Ok(())
+    }
+    #[cfg(feature = "isolator_hybrid")]
+    {
+        csr_write_custom!(0x390, 2); // Set mlwid
+
+        let flash = wg::WGChecker::new(wg::WGC_FLASH_BASE);
+        flash.set_slot_perm(flash.get_nslots() as usize, 0xff);
+        let uart = wg::WGChecker::new(wg::WGC_UART_BASE);
+        uart.set_slot_perm(uart.get_nslots() as usize, 0xff);
+
+        let region = wg::region_init(SMM_BASE, SMM_SIZE, 3 << (wg::TRUSTED_WID * 2), false)?;
+        wg::set_wg(region)?;
+        
+        Ok(())
+    }
+}
+
+pub fn osm_init<'a>() -> Result<(), Error> {
+    #[cfg(feature = "isolator_pmp")]
+    {
+        let region = pmp::region_init(0, usize::MAX, pmp::Priority::Bottom, true)?;
+        OS_REGION_ID.set(region);
+        Ok(())
+    }
+
+    #[cfg(feature = "isolator_wg")]
+    {
         // This region will be accessed by both OS and unprotected user processes.
-        return wg_region_init(
+        let region = wg::region_init(
             SMM_BASE + SMM_SIZE,
             usize::MAX,
-            (3 << (OS_WID * 2)) | 3,
+            (3 << (wg::OS_WID * 2)) | 3,
             false,
-        );
+        )?;
+        wg::set_wg(region)?;
+        OS_REGION_ID.set(region);
+        Ok(())
+    }
+    #[cfg(feature = "isolator_hybrid")]
+    {
+        let region = wg::region_init(
+            OSM_BASE,
+            usize::MAX,
+            3 << (wg::OS_WID * 2) | 3,
+            false,
+        )?;
+        wg::set_wg(region)?;
+
+        let region = pmp::region_init(0, usize::MAX, pmp::Priority::Bottom, true)?;
+        OS_REGION_ID.set(region);
+        Ok(())
     }
 }
 
 pub fn region_init(start: usize, size: usize, eid: usize, shared: bool) -> Result<usize, Error> {
-    #[cfg(feature = "usepmp")]
+    #[cfg(feature = "isolator_pmp")]
     {
         if shared {
-            pmp::pmp_region_init(start, size, pmp::Priority::Bottom, false)
+            pmp::region_init(start, size, pmp::Priority::Bottom, false)
         } else {
-            pmp::pmp_region_init(start, size, pmp::Priority::Any, false)
+            pmp::region_init(start, size, pmp::Priority::Any, false)
         }
     }
-    #[cfg(feature = "usewg")]
+    #[cfg(feature = "isolator_wg")]
     {
-        wg_region_init(start, size, 3 << (eid * 2), true)
+        let region_idx = wg::region_init(start, size, 3 << (eid * 2), true)?;
+        wg::set_wg(region_idx)?;
+        Ok(region_idx)
+    }
+    #[cfg(feature = "isolator_hybrid")]
+    {
+        if shared {
+            pmp::region_init(start, size, pmp::Priority::Bottom, false)
+        } else {
+            pmp::region_init(start, size, pmp::Priority::Any, false)
+        }
     }
 }
 
 pub fn set_isolator(region_idx: usize) -> Result<(), Error> {
-    #[cfg(feature = "usepmp")]
+    #[cfg(feature = "isolator_pmp")]
     {
         pmp::set_keystone(region_idx, pmp::PMP_ALL_PERM)
     }
-    #[cfg(feature = "usewg")]
+    #[cfg(feature = "isolator_wg")]
     {
-        set_wg(region_idx)
+        Ok(())
+        //wg::set_wg(region_idx)
+    }
+    #[cfg(feature = "isolator_hybrid")]
+    {
+        pmp::set_keystone(region_idx, pmp::PMP_ALL_PERM)
     }
 }
 
 pub fn reset_isolator(region_idx: usize) -> Result<(), Error> {
-    #[cfg(feature = "usepmp")]
+    #[cfg(feature = "isolator_pmp")]
     {
         pmp::set_keystone(region_idx, pmp::PMP_NO_PERM)
     }
-    #[cfg(feature = "usewg")]
+    #[cfg(feature = "isolator_wg")]
     {
-        set_wg(region_idx)
+        Ok(())
+        //wg::set_wg(region_idx)
+    }
+    #[cfg(feature = "isolator_hybrid")]
+    {
+        pmp::set_keystone(region_idx, pmp::PMP_NO_PERM)
     }
 }
 
 pub fn region_free(region_idx: usize) -> Result<(), Error> {
-    #[cfg(feature = "usepmp")]
+    #[cfg(feature = "isolator_pmp")]
     {
-        pmp::pmp_region_free(region_idx)
+        pmp::region_free(region_idx)
     }
-    #[cfg(feature = "usewg")]
+    #[cfg(feature = "isolator_wg")]
     {
-        wg_region_free(region_idx)
+        wg::region_free(region_idx)
+    }
+    #[cfg(feature = "isolator_hybrid")]
+    {
+        pmp::region_free(region_idx)
     }
 }
 
 pub fn display_isolator() {
-    let dram = WGChecker::new(WGC_DRAM_BASE);
-    let vendor = dram.get_vendor();
-    let impid = dram.get_impid();
-    let nslots = dram.get_nslots();
-    let errcause = dram.get_errcause();
-    let erraddr = dram.get_erraddr();
-
-    hprintln!(
-        "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
-        vendor,
-        impid,
-        nslots,
-        errcause,
-        erraddr
-    );
-    let vendor = dram.get_vendor();
-    let impid = dram.get_impid();
-    let nslots = dram.get_nslots();
-    let errcause = dram.get_errcause();
-    let erraddr = dram.get_erraddr();
-
-    hprintln!(
-        "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
-        vendor,
-        impid,
-        nslots,
-        errcause,
-        erraddr
-    );
-
-    for idx in 0..(nslots + 1) {
-        let addr = dram.get_slot_addr(idx as usize);
-        let cfg = dram.get_slot_cfg(idx as usize);
-        let perm = dram.get_slot_perm(idx as usize);
-
-        hprintln!(
-            "[WGC][DRAM][Slot-{}] cfg: {:#x} addr: {:#x} perm: {:#x}",
-            idx as usize,
-            cfg,
-            addr,
-            perm
-        );
+    #[cfg(feature = "isolator_pmp")]
+    {
+        pmp::display()
+    }
+    #[cfg(feature = "isolator_wg")]
+    {
+        wg::display()
+    }
+    #[cfg(feature = "isolator_hybrid")]
+    {
+        pmp::display();
+        wg::display()
     }
 }
 
-pub fn update(region_id: usize) -> Result<(), Error> {
-    #[cfg(feature = "usepmp")]
+pub fn update() -> Result<(), Error> {
+    #[cfg(feature = "isolator_pmp")]
     {
-        /* below are executed by all harts */
         pmp::reset(pmp::PMP_N_REG);
         let _ = pmp::set_keystone(sm_region_id(), pmp::PMP_NO_PERM);
         let _ = pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM);
-        pmp::display_pmp();
         Ok(())
     }
-    #[cfg(feature = "usewg")]
+    #[cfg(feature = "isolator_wg")]
     {
-        set_wg(region_id)
+        Ok(())
     }
-}
-
-pub fn enter_context(eid: usize) {
-    #[cfg(feature = "usewg")]
+    #[cfg(feature = "isolator_hybrid")]
     {
-        csr_write_custom!(0x390, eid);
-        compiler_fence(Ordering::Release);
+        pmp::reset(pmp::PMP_N_REG);
+        pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM)?;
+        Ok(())
     }
 }

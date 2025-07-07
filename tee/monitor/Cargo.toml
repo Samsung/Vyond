@@ -32,6 +32,7 @@ volatile-register = "0.2.2"
 
 [features]
 semihosting = ["semihosting/jlink-quirks", "semihosting/machine-mode"]
-usepmp = []
-usewg = []
-default = ["usewg", "semihosting/machine-mode"]
+isolator_pmp = []
+isolator_wg = []
+isolator_hybrid = []
+default = ["isolator_hybrid", "semihosting/machine-mode"]
