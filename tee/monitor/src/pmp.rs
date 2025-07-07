@@ -1,6 +1,6 @@
 use crate::encoding::{PMP_A_NAPOT, PMP_A_TOR, PMP_R, PMP_W, PMP_X};
 use crate::Error;
-use crate::PAGE_SIZE;
+use crate::isolator::PAGE_SIZE;
 use semihosting::hprintln;
 
 #[derive(PartialEq)]
@@ -216,7 +216,7 @@ pub fn reset(count: usize) {
     })
 }
 
-pub fn pmp_region_free(region_idx: usize) -> Result<(), Error> {
+pub fn region_free(region_idx: usize) -> Result<(), Error> {
     if !is_pmp_region_valid(region_idx) {
         return Err(Error::Invalid);
     }
@@ -236,7 +236,7 @@ pub fn pmp_region_free(region_idx: usize) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn pmp_region_init<'a>(
+pub fn region_init<'a>(
     start: usize,
     size: usize,
     priority: Priority,
@@ -451,8 +451,8 @@ pub fn napot_region_init<'a>(
     Ok(region_idx)
 }
 
-pub fn display_pmp() {
-    hprintln!("size mode addr overlap index");
+pub fn display() {
+    hprintln!("addr size mode overlap index");
     hprintln!("-----------------------------");
     (0..PMP_MAX_N_REGION).for_each(|index| {
         if is_pmp_region_valid(index) {
@@ -460,9 +460,9 @@ pub fn display_pmp() {
             hprintln!(
                 "[{}] {:x} {:x} {:x} {} {:x}",
                 index,
+                region.addr,
                 region.size,
                 region.mode,
-                region.addr,
                 region.allow_overlap,
                 region.index,
             );

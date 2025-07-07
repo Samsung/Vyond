@@ -1,6 +1,7 @@
 use crate::Error;
-use crate::PAGE_SIZE;
+use crate::isolator::PAGE_SIZE;
 use volatile_register::{RO, RW};
+use semihosting::hprintln;
 
 /// General WGC
 pub const WGC_SLOT_OFFSET: usize = 0x20;
@@ -141,7 +142,7 @@ impl WGChecker {
     }
 }
 
-pub fn wg_region_init(
+pub fn region_init(
     start: usize,
     size: usize,
     perm: u64,
@@ -176,7 +177,7 @@ pub fn wg_region_init(
     }
 }
 
-pub fn wg_region_free(region_idx: usize) -> Result<(), Error> {
+pub fn region_free(region_idx: usize) -> Result<(), Error> {
     if !is_wg_region_valid(region_idx) {
         return Err(Error::Invalid);
     }
@@ -455,4 +456,40 @@ pub fn reset_wg(region_idx: usize) -> Result<(), Error> {
     dram.set_slot_perm(reg_idx, 0); // RW for w3 only
 
     Ok(())
+}
+
+
+pub fn display() {
+    let dram = WGChecker::new(WGC_DRAM_BASE);
+    let vendor = dram.get_vendor();
+    let impid = dram.get_impid();
+    let nslots = dram.get_nslots();
+    let errcause = dram.get_errcause();
+    let erraddr = dram.get_erraddr();
+
+    hprintln!("[WGCSR] mlwid: {:#x} mwiddeleg {:#x}",
+        csr_read_custom!(0x390),
+        csr_read_custom!(0x748));
+    hprintln!(
+        "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
+        vendor,
+        impid,
+        nslots,
+        errcause,
+        erraddr
+    );
+
+    for idx in 0..(nslots + 1) {
+        let addr = dram.get_slot_addr(idx as usize);
+        let cfg = dram.get_slot_cfg(idx as usize);
+        let perm = dram.get_slot_perm(idx as usize);
+
+        hprintln!(
+            "[WGC][DRAM][Slot-{}] cfg: {:#x} addr: {:#x} perm: {:#x}",
+            idx as usize,
+            cfg,
+            addr,
+            perm
+        );
+    }
 }

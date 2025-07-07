@@ -1,5 +1,3 @@
-use crate::isolator;
-use crate::os_region_id;
 use core::arch::asm;
 
 #[macro_export]
@@ -165,13 +163,9 @@ pub fn enter_enclave_context(eid: usize) {
         CPU_STATE[hartid].is_enclave = true;
         CPU_STATE[hartid].eid = eid;
     }
-    isolator::enter_context(eid);
 }
 
 pub fn exit_enclave_context() {
     let hartid = csr_read!(mhartid) as usize;
-    unsafe {
-        CPU_STATE[hartid].is_enclave = false;
-    };
-    isolator::enter_context(os_region_id());
+    unsafe { CPU_STATE[hartid].is_enclave = false };
 }

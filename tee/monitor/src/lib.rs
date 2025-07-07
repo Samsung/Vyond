@@ -16,14 +16,14 @@ pub mod encoding;
 pub mod isolator;
 pub mod once_cell;
 pub mod panic;
+#[cfg(any(feature = "isolator_pmp", feature = "isolator_hybrid"))]
 pub mod pmp;
 pub mod spinlock;
 pub mod thread;
 pub mod trap;
+#[cfg(any(feature = "isolator_wg", feature = "isolator_hybrid"))]
 pub mod wg;
 
-pub const SMM_BASE: usize = 0x80000000;
-pub const SMM_SIZE: usize = 0x200000;
 
 #[derive(Debug)]
 pub enum Error {
@@ -60,32 +60,6 @@ pub enum Error {
     Invalid,
 }
 
-unsafe impl<T> Sync for OnceCell<T> {}
-
-pub const PAGE_SIZE: usize = 4096;
-
-static SM_INIT_DONE: OnceCell<bool> = OnceCell::new();
-static SM_REGION_ID: OnceCell<usize> = OnceCell::new();
-static OS_REGION_ID: OnceCell<usize> = OnceCell::new();
-
-pub fn os_region_id() -> usize {
-    *OS_REGION_ID.get().unwrap()
-}
-
-pub fn sm_region_id() -> usize {
-    *SM_REGION_ID.get().unwrap()
-}
-
-fn sm_init_done() {
-    SM_INIT_DONE.set(true);
-}
-
-fn sm_wait_for_completion() {
-    while !SM_INIT_DONE.get().unwrap() {
-        compiler_fence(Ordering::Release);
-    }
-}
-
 #[no_mangle]
 pub extern "C" fn sm_init(cold_boot: bool) -> isize {
     let hartid = csr_read!(mhartid);
@@ -93,31 +67,30 @@ pub extern "C" fn sm_init(cold_boot: bool) -> isize {
 
     // initialize SMM
     if cold_boot {
-        if let Ok(region) = isolator::smm_init() {
-            SM_REGION_ID.set(region);
-        } else {
-            heprintln!("Intolerable error - failed to initialize SM memory");
+        if let Err(e) = isolator::smm_init() {
+            heprintln!("Intolerable error - failed to initialize SM memory: {:?}", e);
             return -1;
         }
 
-        if let Ok(region) = isolator::osm_init() {
-            OS_REGION_ID.set(region);
-        } else {
-            heprintln!("Inrolerable error - failed to initialize OS memory");
+        if let Err(e) = isolator::osm_init() {
+            heprintln!("Inrolerable error - failed to initialize OS memory: {:?}", e);
             return -1;
         }
 
-        sm_init_done();
+        isolator::sm_init_done();
 
+        isolator::display_isolator();
         compiler_fence(Ordering::Release);
     }
 
     /* wait until cold-boot hart finishes */
-    sm_wait_for_completion();
+    isolator::sm_wait_for_completion();
 
-    // FIXME: WG needs to execute below once by a trusted hard
-    let _ = isolator::update(sm_region_id());
-    let _ = isolator::update(os_region_id());
+    /* below are executed by all harts */
+    if let Err(e) = isolator::update() {
+        heprintln!("Intolerable error - failed update isolator: {:?}", e);
+        return -1;
+    }
     isolator::display_isolator();
 
     hprintln!(

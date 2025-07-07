@@ -50,7 +50,10 @@ def buildSM(args):
     if args.clean_build:
         os.system(f'cd {sm_root}; cargo clean')
 
-    cmd = f'cd {sm_root}; cargo build --features semihosting'
+    if args.semihosting:
+        cmd = f'cd {sm_root}; cargo build --features semihosting'
+    else:
+        cmd = f'cd {sm_root}; cargo build'
     os.system(cmd)
 
 def buildFW(args):
@@ -125,6 +128,7 @@ def main(argv: List[str] = None):
     #################################################################
     parser_buildSM = subparsers.add_parser('build-sm', help='Build Security Monitor')
     parser_buildSM.add_argument("--clean-build", action='store_true', default=False, help="Clean build")
+    parser_buildSM.add_argument("--semihosting", action='store_true', default=False, help="Use semihosting for console printing")
     parser_buildSM.set_defaults(func=buildSM)
     
     #################################################################

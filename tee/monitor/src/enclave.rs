@@ -1,14 +1,15 @@
 use crate::cpu;
 use crate::encoding::*;
 use crate::isolator;
-use crate::os_region_id;
+use crate::isolator::os_region_id;
+#[cfg(any(feature = "isolator_pmp", feature = "isolator_hybrid"))]
 use crate::pmp;
 use crate::spinlock::SpinLock;
 use crate::thread;
 use crate::trap::TrapFrame;
 use crate::Error;
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum State {
     Stopped,
     Running,
@@ -154,8 +155,11 @@ impl Enclave {
 
         switch_vector_enclave();
 
-        #[cfg(feature = "usepmp")]
-        let _ = pmp::set_keystone(os_region_id(), pmp::PMP_NO_PERM);
+        // Temporarily disabled for new shared memory model
+        //#[cfg(any(feature = "isolator_pmp", feature = "isolator_hybrid"))]
+        //{
+        //    let _ = pmp::set_keystone(os_region_id(), pmp::PMP_NO_PERM);
+        //}
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(ref region) = self.regions[memid] {
                 let _ = isolator::set_isolator(region.id);
@@ -167,10 +171,11 @@ impl Enclave {
     }
 
     pub fn switch_to_host(&mut self, regs: &mut TrapFrame) {
-        // set PMP
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(region) = self.regions[memid].as_ref() {
-                let _ = isolator::reset_isolator(region.id);
+                if region.r_type == RegionType::RegionUTM {
+                    let _ = isolator::reset_isolator(region.id);
+                }
             }
         });
         let _ = isolator::set_isolator(os_region_id());
@@ -235,42 +240,40 @@ pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave
 
     // TODO: Check if create_args is valid
 
-    // create a PMP/WG region bound to the enclave
-    match isolator::region_init(
+    // create a PMP region bound to the enclave
+    if let Ok(region) = isolator::region_init(
         create_args.epm_region.paddr,
         create_args.epm_region.size,
         enclave.id(),
         false,
     ) {
-        Ok(region) => {
-            enclave.regions[0] = Some(Region {
-                id: region,
-                r_type: RegionType::RegionEPM,
-            });
-            enclave.threads[0] = Some(thread::State::new(
-                create_args.epm_region.paddr - 4,
-                (1 << crate::encoding::MSTATUS_MPP_SHIFT) | crate::encoding::MSTATUS_FS,
-            ));
-        }
-        Err(e) => return Err(e),
-    };
+        //hprintln!("Found unused pmp slot: {}", region);
+        enclave.regions[0] = Some(Region {
+            id: region,
+            r_type: RegionType::RegionEPM,
+        });
+        enclave.threads[0] = Some(thread::State::new(
+            create_args.epm_region.paddr - 4,
+            (1 << crate::encoding::MSTATUS_MPP_SHIFT) | crate::encoding::MSTATUS_FS,
+        ));
+    
+        // Temporarily disabled for new shared memory model
+        //if let Ok(region) = isolator::region_init(
+        //    create_args.utm_region.paddr,
+        //    create_args.utm_region.size,
+        //    enclave.id(),
+        //    false,
+        //) {
+        //    enclave.regions[1] = Some(Region {
+        //        id: region,
+        //        r_type: RegionType::RegionUTM,
+        //    });
+        //    return Ok(enclave);
+        //}
+        return Ok(enclave);
+    }
 
-    match isolator::region_init(
-        create_args.utm_region.paddr,
-        create_args.utm_region.size,
-        enclave.id(),
-        true,
-    ) {
-        Ok(shared_region) => {
-            enclave.regions[1] = Some(Region {
-                id: shared_region,
-                r_type: RegionType::RegionUTM,
-            });
-        }
-        Err(e) => return Err(e),
-    };
-
-    Ok(enclave)
+    Err(Error::NoFreeResource)
 }
 
 pub fn find_enclave<'a>(eid: usize) -> Option<&'a mut Enclave> {
