@@ -925,6 +925,7 @@ class WGRocket(tile: WGRocketTile)(implicit p: Parameters) extends CoreModule()(
   else {
     when (csr.io.trace(0).valid) {
       printf("C%d: %d [%d] pc=[%x] W[r%d=%x][%d] R[r%d=%x] R[r%d=%x] inst=[%x] wid=[%x] DASM(%x)\n",
+         io.hartid, coreMonitorBundle.timer, coreMonitorBundle.valid,
          coreMonitorBundle.pc,
          Mux(wb_ctrl.wxd || wb_ctrl.wfd, coreMonitorBundle.wrdst, 0.U),
          Mux(coreMonitorBundle.wrenx, coreMonitorBundle.wrdata, 0.U),
