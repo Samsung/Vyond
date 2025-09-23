@@ -15,6 +15,7 @@ class DualRocketWithWGMConfig extends Config(
 class WGRocketConfig extends Config(
   new worldguard.WithWorldGuard(nWorlds = 4, nSlots = 4) ++
   new worldguard.WithWGRocketNBigCores(1) ++
+  new freechips.rocketchip.subsystem.WithoutTLMonitors ++
   new chipyard.config.AbstractConfig)
 
 class WGRocketAndRocketWithWGM extends Config(
