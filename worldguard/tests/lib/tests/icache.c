@@ -41,11 +41,11 @@ void config_wgchecker()
 #endif
   unsigned int (*pFunc)(unsigned int, unsigned int) = gcd_ref;
 
-  uint64_t lgAlign = 6; // cache line aligned
+  uint64_t lgAlign = 2; // cache line aligned
 #ifdef BARE_METAL
   kprintf("pFunc: 0x%lx\n", pFunc);
 #else
-  printf("pFunc: %p\n", pFunc);
+  printf("Region to protect: (%p,%p)\n", pFunc, pFunc + SZ_CL * 10);
 #endif
   //----------------------------------------------------------------------------
   // No. | Addr           | CFG   | PERM    | Description
@@ -57,13 +57,26 @@ void config_wgchecker()
   //----------------------------------------------------------------------------
   config_wgc(0, WGC_MEMORY_BASE, MEMORY_BASE,                    0x0,   0x0,  lgAlign);
   config_wgc(1, WGC_MEMORY_BASE, (uint64_t)(pFunc),              0x301, 0xff, lgAlign);
-  config_wgc(2, WGC_MEMORY_BASE, (uint64_t)(pFunc + SZ_CL * 3),  0x301, 0xff, lgAlign);
+  config_wgc(2, WGC_MEMORY_BASE, (uint64_t)(pFunc + SZ_CL * 10),  0x301, 0xff, lgAlign);
   config_wgc(3, WGC_MEMORY_BASE, MEMORY_TOP,                     0x301, 0xff, lgAlign);
+  
+#ifdef BARE_METAL
+  kprintf("---------------------------------------------\n");
+  kprintf("After configure for WG_CHECKER\n");
+#else
+  printf("---------------------------------------------\n");
+  printf("After configure for WG_CHECKER\n");
+#endif
+  wgc_print_slot_reg(WGC_MEMORY_BASE, 0);
+  wgc_print_slot_reg(WGC_MEMORY_BASE, 1);
+  wgc_print_slot_reg(WGC_MEMORY_BASE, 2);
+  wgc_print_slot_reg(WGC_MEMORY_BASE, 3);
 }
 
 void test_icache()
 {
-  //config_wgchecker();
+  config_wgchecker();
+  printf("start the loop...\n");
   for (int wid = 0; wid < 4; wid++) {
     write_csr(0x391, wid);
 #ifdef BARE_METAL
