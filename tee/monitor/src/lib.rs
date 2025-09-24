@@ -14,18 +14,19 @@ pub mod api;
 pub mod enclave;
 pub mod encoding;
 pub mod isolator;
+pub mod log;
 pub mod once_cell;
 pub mod panic;
 #[cfg(any(feature = "isolator_pmp", feature = "isolator_hybrid"))]
 pub mod pmp;
+pub mod shm;
 pub mod spinlock;
 pub mod thread;
 pub mod trap;
 #[cfg(any(feature = "isolator_wg", feature = "isolator_hybrid"))]
 pub mod wg;
 
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     Success = 0,
     Unknown = 100000,
@@ -68,18 +69,24 @@ pub extern "C" fn sm_init(cold_boot: bool) -> isize {
     // initialize SMM
     if cold_boot {
         if let Err(e) = isolator::smm_init() {
-            heprintln!("Intolerable error - failed to initialize SM memory: {:?}", e);
+            heprintln!(
+                "Intolerable error - failed to initialize SM memory: {:?}",
+                e
+            );
             return -1;
         }
 
         if let Err(e) = isolator::osm_init() {
-            heprintln!("Inrolerable error - failed to initialize OS memory: {:?}", e);
+            heprintln!(
+                "Inrolerable error - failed to initialize OS memory: {:?}",
+                e
+            );
             return -1;
         }
 
         isolator::sm_init_done();
 
-        isolator::display_isolator();
+        //isolator::display_isolator();
         compiler_fence(Ordering::Release);
     }
 

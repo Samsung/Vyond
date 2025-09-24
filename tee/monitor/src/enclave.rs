@@ -1,37 +1,44 @@
 use crate::cpu;
+use crate::dbg;
 use crate::encoding::*;
 use crate::isolator;
 use crate::isolator::os_region_id;
 #[cfg(any(feature = "isolator_pmp", feature = "isolator_hybrid"))]
 use crate::pmp;
+use crate::shm;
 use crate::spinlock::SpinLock;
 use crate::thread;
 use crate::trap::TrapFrame;
 use crate::Error;
+use semihosting::{heprintln, hprint, hprintln};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum State {
     Stopped,
     Running,
     Destroying,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum RegionType {
     RegionInvalid,
     RegionEPM,
     RegionUTM,
+    RegionShared,
     RegionOther,
 }
 
 pub struct Region {
     id: usize,
     r_type: RegionType,
+    paddr: usize,
+    size: usize,
+    perm_conf: shm::RegionPermConfig,
 }
 
 /* TODO: does not support multithreaded enclave yet */
-const MAX_ENCLAVE_THREADS: usize = 1;
-const MAX_ENCLAVE_REGIONS: usize = 8;
+pub const MAX_ENCLAVE_THREADS: usize = 1;
+pub const MAX_ENCLAVE_REGIONS: usize = 8;
 
 pub struct RunState {
     count: usize,
@@ -155,6 +162,22 @@ impl Enclave {
 
         switch_vector_enclave();
 
+        (0..MAX_SHARED_REGIONS).for_each(|memid| {
+            unsafe {
+                if let Some(region) = get_shm_region(memid) {
+                    let old_perm = region
+                        .perm_conf
+                        .get_perm(0 /*untrusted eid*/)
+                        .expect("Perm not found");
+                    let new_perm = region.perm_conf.get_perm(self.eid).expect("Perm not found");
+
+                    // if old_perm != new_perm {
+                    //     let _ = isolator::set_isolator(region.id, new_perm);
+                    // }
+                }
+            }
+        });
+
         // Temporarily disabled for new shared memory model
         //#[cfg(any(feature = "isolator_pmp", feature = "isolator_hybrid"))]
         //{
@@ -171,6 +194,21 @@ impl Enclave {
     }
 
     pub fn switch_to_host(&mut self, regs: &mut TrapFrame) {
+        (0..MAX_SHARED_REGIONS).for_each(|memid| {
+            unsafe {
+                if let Some(region) = &SHARED_MEM[memid] {
+                    let old_perm = region.perm_conf.get_perm(self.eid).expect("Perm not found");
+                    let new_perm = region
+                        .perm_conf
+                        .get_perm(0 /*untrusted eid*/)
+                        .expect("Perm not found");
+                    // if old_perm != new_perm {
+                    //     let _ = isolator::set_isolator(region.id, new_perm);
+                    // }
+                }
+            }
+        });
+
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(region) = self.regions[memid].as_ref() {
                 if region.r_type == RegionType::RegionUTM {
@@ -211,10 +249,14 @@ impl Enclave {
     }
 }
 
-const MAX_ENCLAVES: usize = 8; // FIXME: should be associated with NWORLDS
+pub const MAX_ENCLAVES: usize = 8; // FIXME: should be associated with NWORLDS
+pub const MAX_SHARED_REGIONS: usize = 8;
 
 const INIT_VALUE: Option<Enclave> = None;
 static mut ENCLAVES: [Option<Enclave>; MAX_ENCLAVES] = [INIT_VALUE; MAX_ENCLAVES];
+
+const INIT_SHM: Option<Region> = None;
+static mut SHARED_MEM: [Option<Region>; MAX_SHARED_REGIONS] = [INIT_SHM; MAX_SHARED_REGIONS];
 
 pub fn enclave_exists(enclaves: &[Option<Enclave>], eid: usize) -> bool {
     (eid < enclaves.len()) && enclaves[eid].is_some()
@@ -251,12 +293,19 @@ pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave
         enclave.regions[0] = Some(Region {
             id: region,
             r_type: RegionType::RegionEPM,
+            paddr: create_args.epm_region.paddr,
+            size: create_args.epm_region.size,
+            perm_conf: shm::RegionPermConfig {
+                owner_id: enclave.id(),
+                conf_list: [None; MAX_ENCLAVES],
+            },
         });
+
         enclave.threads[0] = Some(thread::State::new(
             create_args.epm_region.paddr - 4,
             (1 << crate::encoding::MSTATUS_MPP_SHIFT) | crate::encoding::MSTATUS_FS,
         ));
-    
+
         // Temporarily disabled for new shared memory model
         //if let Ok(region) = isolator::region_init(
         //    create_args.utm_region.paddr,
@@ -270,6 +319,22 @@ pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave
         //    });
         //    return Ok(enclave);
         //}
+
+        let rid = match create_shared_mem(
+            enclave.id(),
+            create_args.utm_region.paddr,
+            create_args.utm_region.size,
+        ) {
+            Ok(rid) => rid,
+            Err(err) => {
+                panic!("Failed to create a shared memory {:?}", err);
+            }
+        };
+
+        change_shm_region(rid, 3i8.into())?;
+
+        isolator::display_isolator();
+
         return Ok(enclave);
     }
 
@@ -304,6 +369,20 @@ pub fn destroy_enclave(eid: usize) -> Result<(), Error> {
 
         if !destroyable {
             return Err(Error::NotDestroyable);
+        }
+
+        for i in 0..MAX_SHARED_REGIONS {
+            unsafe {
+                if let Some(region) = &SHARED_MEM[i] {
+                    if region.r_type != RegionType::RegionInvalid
+                        && region.perm_conf.owner_id == eid
+                    {
+                        // TODO:
+                        // Does SM need to share removed region ids?
+                        let _ = isolator::region_free(region.id);
+                    }
+                }
+            }
         }
 
         // 1. clear all the data in the enclave pages
@@ -452,4 +531,292 @@ extern "C" {
 }
 extern "C" {
     fn _trap_handler();
+}
+
+/// Creates a shared memory owned by a given enclve
+///
+/// # Arguments
+///
+/// * `eid` - The enclave id
+/// * `paddr` - The base physical address of the shared memory
+/// * `size` - The size of the shared memory
+///
+/// # Returns
+/// A `usize` value that identification for the created sharhed memory
+///
+///
+pub fn create_shared_mem(eid: usize, paddr: usize, size: usize) -> Result<usize, Error> {
+    if let Some(_) = find_enclave(eid) {
+        if let Ok(region_idx) = isolator::region_init(paddr, size, eid, true) {
+            for i in 0..MAX_SHARED_REGIONS {
+                if unsafe { SHARED_MEM[i].is_none() } {
+                    unsafe {
+                        let mut region = Region {
+                            id: region_idx,
+                            r_type: RegionType::RegionShared,
+                            paddr,
+                            size,
+                            perm_conf: shm::RegionPermConfig {
+                                owner_id: eid,
+                                conf_list: [None; MAX_ENCLAVES],
+                            },
+                        };
+                        region.perm_conf.insert_perm(shm::PermConfig {
+                            eid,
+                            dyn_perm: shm::Perm::FULL,
+                            st_perm: shm::Perm::FULL,
+                        });
+                        SHARED_MEM[i] = Some(region);
+                    }
+                    return Ok(i);
+                }
+            }
+        }
+    }
+    // for eid in 0..MAX_ENCLAVES {
+    //         if unsafe { ENCLAVES[eid].is_none() } {
+    //             unsafe { ENCLAVES[eid] = Some(Enclave::new(eid, pa_params)) };
+    //             return Ok(unsafe { ENCLAVES[eid].as_mut().unwrap() });
+    //         }
+    //     }
+    Err(Error::Invalid)
+}
+
+pub fn change_shm_region(rid: usize, dyn_perm: shm::Perm) -> Result<(), Error> {
+    if let Some(enclave) = find_enclave(cpu::get_enclave_id()) {
+        if let Some(region) = get_shm_region(rid) {
+            if let Some(perm) = region.perm_conf.get_perm_mut(enclave.id()) {
+                if perm.update_dyn_perm(dyn_perm) {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Err(Error::InvalidId)
+}
+
+pub fn share_shm_region(rid: usize, eid2share: usize, st_perm: shm::Perm) -> Result<(), Error> {
+    if let Some(enclave) = find_enclave(cpu::get_enclave_id()) {
+        let owner_eid = enclave.id();
+        if let Some(region) = get_shm_region(rid) {
+            if region.perm_conf.owner_id == owner_eid {
+                let ret = region.perm_conf.insert_perm(shm::PermConfig {
+                    eid: eid2share,
+                    dyn_perm: shm::Perm::NULL,
+                    st_perm,
+                });
+                if ret == false {
+                    dbg!("Already Exists PermConfig for eid {}", eid2share);
+                    return Err(Error::Invalid);
+                }
+            } else {
+                dbg!("eid {} is not owner of rid {}", owner_eid, rid);
+                return Err(Error::Invalid);
+            }
+        } else {
+            dbg!("Region {} does not exist", rid);
+            return Err(Error::Invalid);
+        }
+    } else {
+        dbg!("The current context is not enclave");
+        return Err(Error::Invalid);
+    }
+    Ok(())
+}
+
+pub fn get_shm_region(rid: usize) -> Option<&'static mut Region> {
+    unsafe {
+        if rid < MAX_SHARED_REGIONS {
+            SHARED_MEM[rid].as_mut()
+        } else {
+            None
+        }
+    }
+}
+
+pub fn remove_region(rid: usize) -> bool {
+    unsafe {
+        if rid < MAX_SHARED_REGIONS {
+            SHARED_MEM[rid] = None;
+            return true;
+        }
+    }
+    false
+}
+
+pub fn display() {
+    hprintln!("Display Enclaves");
+    for eid in 0..MAX_ENCLAVES {
+        if let Some(enclave) = find_enclave(eid) {
+            hprintln!("+--------+--------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+--------+");
+            hprintln!("|                                                                 Enclave                                                                         |");
+            hprintln!("+--------+--------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+--------+");
+            hprintln!("|  eid   |  state |                                              pa_params                                                               |#regions|");
+            hprintln!("+--------+--------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+--------+");
+            hprintln!("|        |        |   dram_base    |  dram_size     |  user_base     |  free_base     |   ut_base      |  ut_size       |   free_req     |        |");
+            hprintln!("+--------+--------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+--------+");
+            let runstate = enclave.state.lock();
+            hprint!("|{:>8}", enclave.eid);
+            hprint!("|{:>8}", runstate.state as u8);
+            hprint!("|{:>16x}", enclave.pa_params.dram_base);
+            hprint!("|{:>16x}", enclave.pa_params.dram_size);
+            hprint!("|{:>16x}", enclave.pa_params.user_base);
+            hprint!("|{:>16x}", enclave.pa_params.free_base);
+            hprint!("|{:>16x}", enclave.pa_params.untrusted_base);
+            hprint!("|{:>16x}", enclave.pa_params.untrusted_size);
+            hprint!("|{:>16x}", enclave.pa_params.free_requested);
+
+            let mut region_cnt = 0;
+            for rid in 0..MAX_ENCLAVE_REGIONS {
+                if let Some(_) = &enclave.regions[rid] {
+                    region_cnt += 1;
+                }
+            }
+            hprintln!("|{:>8}|", region_cnt);
+            hprintln!("+--------+--------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+--------+");
+            drop(runstate);
+
+            for rid in 0..MAX_ENCLAVE_REGIONS {
+                if let Some(region) = &enclave.regions[rid] {
+                    hprintln!("");
+                    hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+                    hprintln!(
+                        "|                                           Region                                    |"
+                    );
+                    hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+                    hprintln!(
+                        "|regionid|  type  |      paddr     |      size      |             perm_conf           |"
+                    );
+                    hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+                    hprintln!(
+                        "|--------|--------|----------------|----------------|   owner_id     |   #confs       |"
+                    );
+                    hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+                    break;
+                }
+            }
+
+            for rid in 0..MAX_ENCLAVE_REGIONS {
+                if let Some(region) = &enclave.regions[rid] {
+                    hprint!("|{:>8}", region.id);
+                    hprint!("|{:>8?}", region.r_type as u8);
+                    hprint!("|{:>16x}", region.paddr);
+                    hprint!("|{:>16x}", region.size);
+                    hprint!("|{:>16}", region.perm_conf.owner_id);
+                    let mut cfg_cnt = 0;
+                    for cid in 0..MAX_ENCLAVES {
+                        if let Some(_) = region.perm_conf.conf_list[cid] {
+                            cfg_cnt += 1;
+                        }
+                    }
+                    hprintln!("|{:>16}|", cfg_cnt);
+                    hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+
+                    for cid in 0..MAX_ENCLAVES {
+                        if let Some(conf) = region.perm_conf.conf_list[cid] {
+                            hprintln!("");
+                            hprintln!("+--------+--------+--------+");
+                            hprintln!("|         PermConf         |");
+                            hprintln!("+--------+--------+--------+");
+                            hprintln!("|  eid   |st_perm |dyn_perm|");
+                            hprintln!("+--------+--------+--------+");
+                            break;
+                        }
+                    }
+
+                    for cid in 0..MAX_ENCLAVES {
+                        if let Some(conf) = region.perm_conf.conf_list[cid] {
+                            hprint!("|{:>8}", conf.eid);
+                            hprint!("|{:>8x}", conf.st_perm);
+                            hprintln!("|{:>8x}|", conf.dyn_perm);
+                            hprintln!("+--------+--------+--------+");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for rid in 0..MAX_SHARED_REGIONS {
+        unsafe {
+            if let Some(_) = &SHARED_MEM[rid] {
+                hprintln!("");
+                hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+                hprintln!(
+                        "+                                    Shared Region                                    +"
+                    );
+                hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+                hprintln!(
+                        "|regionid|  type  |      paddr     |      size      |             perm_conf           |"
+                    );
+                hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+                hprintln!(
+                        "|--------|--------|----------------|----------------|   owner_id     |   #confs       |"
+                    );
+                hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+                break;
+            }
+        }
+    }
+
+    for rid in 0..MAX_SHARED_REGIONS {
+        unsafe {
+            if let Some(region) = &SHARED_MEM[rid] {
+                hprint!("|{:>8}", region.id);
+                hprint!("|{:>8?}", region.r_type as u8);
+                hprint!("|{:>16x}", region.paddr);
+                hprint!("|{:>16x}", region.size);
+                hprint!("|{:>16}", region.perm_conf.owner_id);
+                let mut cfg_cnt = 0;
+                for cid in 0..MAX_ENCLAVES {
+                    if let Some(_) = region.perm_conf.conf_list[cid] {
+                        cfg_cnt += 1;
+                    }
+                }
+                hprintln!("|{:>16}|", cfg_cnt);
+                hprintln!(
+                        "+--------+--------+----------------+----------------+----------------+----------------+"
+                    );
+
+                for cid in 0..MAX_ENCLAVES {
+                    if let Some(conf) = region.perm_conf.conf_list[cid] {
+                        hprintln!("");
+                        hprintln!("+--------+--------+--------+");
+                        hprintln!("|         PermConf         |");
+                        hprintln!("+--------+--------+--------+");
+                        hprintln!("|  eid   |st_perm |dyn_perm|");
+                        hprintln!("+--------+--------+--------+");
+                        break;
+                    }
+                }
+
+                for cid in 0..MAX_ENCLAVES {
+                    if let Some(conf) = region.perm_conf.conf_list[cid] {
+                        hprint!("|{:>8}", conf.eid);
+                        hprint!("|{:>8x}", conf.st_perm);
+                        hprintln!("|{:>8x}|", conf.dyn_perm);
+                        hprintln!("+--------+--------+--------+");
+                    }
+                }
+            }
+        }
+    }
 }

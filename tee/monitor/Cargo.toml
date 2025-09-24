@@ -24,9 +24,10 @@ opt-level = 'z'
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-semihosting = { package = "semihosting", path = "../modules/semihosting", default-features = false}
+semihosting = { package = "semihosting", path = "../modules/semihosting", default-features = false }
 paste = "1.0"
 volatile-register = "0.2.2"
+bitflags = "2.9.1"
 
 [build-dependencies]
 
@@ -35,4 +36,5 @@ semihosting = ["semihosting/jlink-quirks", "semihosting/machine-mode"]
 isolator_pmp = []
 isolator_wg = []
 isolator_hybrid = []
-default = ["isolator_hybrid", "semihosting/machine-mode"]
+dbg = []
+default = ["isolator_wg", "semihosting/machine-mode", "dbg"]
