@@ -1,7 +1,7 @@
-use crate::Error;
 use crate::isolator::PAGE_SIZE;
+use crate::Error;
+use semihosting::{hprint, hprintln};
 use volatile_register::{RO, RW};
-use semihosting::hprintln;
 
 /// General WGC
 pub const WGC_SLOT_OFFSET: usize = 0x20;
@@ -24,9 +24,16 @@ pub const WGC_ERRCAUSE_IP_SHIFT: u8 = 63;
 
 pub const WGC_ALL_PERM: usize = (1 << (NWORLDS * 2)) - 1;
 
+// TODO: read platform specific configs from dtb
 pub const WGC_DRAM_BASE: usize = 0x600_0000;
 pub const WGC_FLASH_BASE: usize = 0x600_1000;
 pub const WGC_UART_BASE: usize = 0x600_2000;
+
+const DRAM_BASE: usize = 0x8000_0000;
+const FLASH_BASE: usize = 0x20000000;
+const FLASH_SIZE: usize = 0x4000000;
+const UART_BASE: usize = 0x10000000;
+const UART_SIZE: usize = 0x100;
 
 /// WGC for Memory
 #[repr(C)]
@@ -59,6 +66,18 @@ impl WGChecker {
         WGChecker {
             p_wgc: unsafe { &mut *(base as *mut WGCRegisterBlock) },
             p_slot_base: base + WGC_SLOT_OFFSET,
+        }
+    }
+
+    pub fn from(base: usize, size: usize) -> Result<WGChecker, Error> {
+        if FLASH_BASE <= base && base + size < FLASH_BASE + FLASH_SIZE {
+            Ok(WGChecker::new(WGC_FLASH_BASE))
+        } else if UART_BASE <= base && base + size < UART_BASE + UART_SIZE {
+            Ok(WGChecker::new(WGC_UART_BASE))
+        } else if DRAM_BASE <= base {
+            Ok(WGChecker::new(WGC_DRAM_BASE))
+        } else {
+            Err(Error::Invalid)
         }
     }
 
@@ -458,7 +477,6 @@ pub fn reset_wg(region_idx: usize) -> Result<(), Error> {
     Ok(())
 }
 
-
 pub fn display() {
     let dram = WGChecker::new(WGC_DRAM_BASE);
     let vendor = dram.get_vendor();
@@ -467,9 +485,11 @@ pub fn display() {
     let errcause = dram.get_errcause();
     let erraddr = dram.get_erraddr();
 
-    hprintln!("[WGCSR] mlwid: {:#x} mwiddeleg {:#x}",
+    hprintln!(
+        "[WGCSR] mlwid: {:#x} mwiddeleg {:#x}",
         csr_read_custom!(0x390),
-        csr_read_custom!(0x748));
+        csr_read_custom!(0x748)
+    );
     hprintln!(
         "[WGC][DRAM] REGs vendor: {} impid: {} nslots: {} errcause: {:#x} erraddr: {:#x}",
         vendor,
@@ -491,5 +511,26 @@ pub fn display() {
             addr,
             perm
         );
+    }
+}
+
+pub fn display_regions() {
+    hprintln!("Display WG Regions");
+    hprintln!("+----------------+----------------+--------+--------+--------+----+");
+    hprintln!("+     address    +     size       +  mode  +  perm  + overlap+ idx+");
+    hprintln!("+----------------+----------------+--------+--------+--------+----+");
+    for rid in 0..WG_MAX_N_REGION {
+        unsafe {
+            if let Some(region) = &REGIONS[rid] {
+                hprint!("|{:>16x}", region.addr);
+                hprint!("|{:>16x}", region.size);
+                hprint!("|{:>8x}", region.mode);
+                hprint!("|{:>8x}", region.perm);
+                hprint!("|{:>8}", region.allow_overlap);
+                hprint!("|{:>4}", region.index);
+                hprintln!("|");
+                hprintln!("+----------------+----------------+--------+--------+--------+----+");
+            }
+        }
     }
 }

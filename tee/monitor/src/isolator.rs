@@ -1,3 +1,4 @@
+use crate::enclave;
 #[cfg(any(feature = "isolator_pmp", feature = "isolator_hybrid"))]
 use crate::pmp;
 #[cfg(any(feature = "isolator_wg", feature = "isolator_hybrid"))]
@@ -5,6 +6,7 @@ use crate::wg;
 use crate::{Error, OnceCell};
 use core::sync::atomic::compiler_fence;
 use core::sync::atomic::Ordering;
+use semihosting::{heprintln, hprintln};
 
 pub const SMM_BASE: usize = 0x80000000;
 pub const SMM_SIZE: usize = 0x200000;
@@ -21,7 +23,6 @@ static OS_REGION_ID: OnceCell<usize> = OnceCell::new();
 pub fn os_region_id() -> usize {
     *OS_REGION_ID.get().unwrap()
 }
-
 
 pub fn sm_region_id() -> usize {
     *SM_REGION_ID.get().unwrap()
@@ -70,7 +71,7 @@ pub fn smm_init<'a>() -> Result<(), Error> {
 
         let region = wg::region_init(SMM_BASE, SMM_SIZE, 3 << (wg::TRUSTED_WID * 2), false)?;
         wg::set_wg(region)?;
-        
+
         Ok(())
     }
 }
@@ -98,12 +99,7 @@ pub fn osm_init<'a>() -> Result<(), Error> {
     }
     #[cfg(feature = "isolator_hybrid")]
     {
-        let region = wg::region_init(
-            OSM_BASE,
-            usize::MAX,
-            3 << (wg::OS_WID * 2) | 3,
-            false,
-        )?;
+        let region = wg::region_init(OSM_BASE, usize::MAX, 3 << (wg::OS_WID * 2) | 3, false)?;
         wg::set_wg(region)?;
 
         let region = pmp::region_init(0, usize::MAX, pmp::Priority::Bottom, true)?;
@@ -153,6 +149,22 @@ pub fn set_isolator(region_idx: usize) -> Result<(), Error> {
     }
 }
 
+// pub fn set_isolator(region_idx: usize, perm_conf: PermConfig) Result<(), Error> {
+//     #[cfg(feature = "isolator_pmp")]
+//     {
+//         pmp::set_keystone(region_idx, pmp::PMP_ALL_PERM)
+//     }
+//     #[cfg(feature = "isolator_wg")]
+//     {
+//         Ok(())
+//         //wg::set_wg(region_idx)
+//     }
+//     #[cfg(feature = "isolator_hybrid")]
+//     {
+//         pmp::set_keystone(region_idx, pmp::PMP_ALL_PERM)
+//     }
+// }
+
 pub fn reset_isolator(region_idx: usize) -> Result<(), Error> {
     #[cfg(feature = "isolator_pmp")]
     {
@@ -191,7 +203,8 @@ pub fn display_isolator() {
     }
     #[cfg(feature = "isolator_wg")]
     {
-        wg::display()
+        enclave::display();
+        wg::display_regions();
     }
     #[cfg(feature = "isolator_hybrid")]
     {
