@@ -29,6 +29,7 @@ pub struct PermConfig {
     pub eid: usize,
     pub dyn_perm: Perm,
     pub st_perm: Perm,
+    pub maps: isize,
 }
 
 impl Default for PermConfig {
@@ -37,6 +38,7 @@ impl Default for PermConfig {
             eid: 0,
             dyn_perm: Perm::NULL,
             st_perm: Perm::NULL,
+            maps: 0,
         }
     }
 }
@@ -48,6 +50,14 @@ impl PermConfig {
             return true;
         }
         false
+    }
+
+    pub fn increment_map(&mut self) {
+        self.maps += 1
+    }
+
+    pub fn decrement_map(&mut self) {
+        self.maps -= 1
     }
 }
 

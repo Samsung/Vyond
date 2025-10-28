@@ -22,6 +22,9 @@
 #define FID_RANGE_ENCLAVE         3999
 /* 4000-4999 are experimental */
 #define SBI_SM_CALL_PLUGIN        4000
+#define SBI_SM_CREATE_SHM_REGION  4001
+#define SBI_SM_CHANGE_SHM_REGION  4002
+#define SBI_SM_SHARE_SHM_REGION   4003
 #define FID_RANGE_CUSTOM          4999
 
 /* error codes */
