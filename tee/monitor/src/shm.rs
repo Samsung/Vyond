@@ -51,6 +51,7 @@ impl PermConfig {
         }
         false
     }
+
     pub fn increment_map(&mut self) {
         self.maps += 1
     }
