@@ -185,7 +185,7 @@ impl Enclave {
         //}
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(ref region) = self.regions[memid] {
-                let _ = isolator::set_isolator(region.id);
+                let _ = isolator::set_isolator(region.id, false);
             }
         });
 
@@ -212,11 +212,11 @@ impl Enclave {
         (0..MAX_ENCLAVE_REGIONS).for_each(|memid| {
             if let Some(region) = self.regions[memid].as_ref() {
                 if region.r_type == RegionType::RegionUTM {
-                    let _ = isolator::reset_isolator(region.id);
+                    let _ = isolator::reset_isolator(region.id, false);
                 }
             }
         });
-        let _ = isolator::set_isolator(os_region_id());
+        let _ = isolator::set_isolator(os_region_id(), false);
 
         let interrupts = MIP_SSIP | MIP_STIP | MIP_SEIP;
         csr_write!(mideleg, interrupts);
@@ -320,20 +320,19 @@ pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave
         //    return Ok(enclave);
         //}
 
-        let rid = match create_shared_mem(
-            enclave.id(),
-            create_args.utm_region.paddr,
-            create_args.utm_region.size,
-        ) {
-            Ok(rid) => rid,
-            Err(err) => {
-                panic!("Failed to create a shared memory {:?}", err);
-            }
-        };
+        // An example use of shared memory
+        //let rid = match create_shared_mem(
+        //    enclave.id(),
+        //    create_args.utm_region.paddr,
+        //    create_args.utm_region.size,
+        //) {
+        //    Ok(rid) => rid,
+        //    Err(err) => {
+        //        panic!("Failed to create a shared memory {:?}", err);
+        //    }
+        //};
 
-        change_shm_region(rid, 3i8.into())?;
-
-        isolator::display_isolator();
+        //change_shm_region(rid, 3i8.into())?;
 
         return Ok(enclave);
     }
@@ -377,8 +376,7 @@ pub fn destroy_enclave(eid: usize) -> Result<(), Error> {
                     if region.r_type != RegionType::RegionInvalid
                         && region.perm_conf.owner_id == eid
                     {
-                        // TODO:
-                        // Does SM need to share removed region ids?
+                        let _ = isolator::set_isolator(region.id, true);
                         let _ = isolator::region_free(region.id);
                     }
                 }
@@ -397,7 +395,8 @@ pub fn destroy_enclave(eid: usize) -> Result<(), Error> {
                 //1.a Clear all pages
                 let rid = region.id;
 
-                //1.b free pmp region
+                //1.b free pmp/wg region
+                let _ = isolator::set_isolator(rid, true);
                 let _ = isolator::region_free(rid);
             }
         }
@@ -565,6 +564,7 @@ pub fn create_shared_mem(eid: usize, paddr: usize, size: usize) -> Result<usize,
                             eid,
                             dyn_perm: shm::Perm::FULL,
                             st_perm: shm::Perm::FULL,
+                            maps: 0,
                         });
                         SHARED_MEM[i] = Some(region);
                     }
@@ -604,6 +604,7 @@ pub fn share_shm_region(rid: usize, eid2share: usize, st_perm: shm::Perm) -> Res
                     eid: eid2share,
                     dyn_perm: shm::Perm::NULL,
                     st_perm,
+                    maps: 0,
                 });
                 if ret == false {
                     dbg!("Already Exists PermConfig for eid {}", eid2share);
