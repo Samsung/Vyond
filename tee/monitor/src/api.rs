@@ -8,7 +8,7 @@ pub extern "C" fn sbi_sm_create_enclave(
     eid: *mut usize,
     create_args: *const enclave::KeystoneSBICreate,
 ) -> isize {
-    dbg!("[create_enclave] eid: {:?}", eid);
+    dbg!("[create_enclave]");
     let create_args = unsafe { &*create_args };
     let ret = match enclave::create_enclave(create_args) {
         Ok(enclave) => {

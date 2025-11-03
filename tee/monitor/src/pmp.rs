@@ -1,6 +1,6 @@
 use crate::encoding::{PMP_A_NAPOT, PMP_A_TOR, PMP_R, PMP_W, PMP_X};
-use crate::Error;
 use crate::isolator::PAGE_SIZE;
+use crate::Error;
 use semihosting::hprintln;
 
 #[derive(PartialEq)]
@@ -231,7 +231,10 @@ pub fn region_free(region_idx: usize) -> Result<(), Error> {
         unsafe { REG_BITMAP &= !(1 << (reg_idx - 1)) };
     }
 
-    unsafe { REGIONS[region_idx] = None }
+    unsafe {
+        core::ptr::write_bytes(region.addr as *mut u8, 0, region.size);
+        REGIONS[region_idx] = None
+    }
 
     Ok(())
 }
@@ -280,15 +283,19 @@ pub fn is_pmp_region_valid(region_idx: usize) -> bool {
     return (unsafe { REGION_DEF_BITMAP } & (1 << region_idx)) != 0;
 }
 
-pub fn set_keystone(region_idx: usize, perm: usize) -> Result<(), Error> {
+pub fn set_pmp(region_idx: usize, perm: usize, destroy: bool) -> Result<(), Error> {
     if !is_pmp_region_valid(region_idx) {
         return Err(Error::Invalid);
     }
 
     let region = unsafe { REGIONS[region_idx].as_ref().unwrap() };
     let reg_idx = region.index();
-    let mut pmpcfg = region.pmpcfg_val(reg_idx, perm & PMP_ALL_PERM);
-    let pmpaddr = region.pmpaddr_val();
+    let mut pmpcfg = if destroy {
+        0
+    } else {
+        region.pmpcfg_val(reg_idx, perm & PMP_ALL_PERM)
+    };
+    let pmpaddr = if destroy { 0 } else { region.pmpaddr_val() };
 
     match reg_idx {
         0 => pmp_set!(0, 0, pmpaddr, pmpcfg),
@@ -313,7 +320,7 @@ pub fn set_keystone(region_idx: usize, perm: usize) -> Result<(), Error> {
     if region.needs_two_entries() {
         let reg_idx = reg_idx - 1;
         let mut pmpcfg = 0;
-        let pmpaddr = region.addr() >> 2;
+        let pmpaddr = if destroy { 0 } else { region.addr() >> 2 };
         match reg_idx {
             0 => pmp_set!(0, 0, pmpaddr, pmpcfg),
             1 => pmp_set!(1, 0, pmpaddr, pmpcfg),

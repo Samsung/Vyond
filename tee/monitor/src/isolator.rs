@@ -133,19 +133,22 @@ pub fn region_init(start: usize, size: usize, eid: usize, shared: bool) -> Resul
     }
 }
 
-pub fn set_isolator(region_idx: usize) -> Result<(), Error> {
+pub fn set_isolator(region_idx: usize, destroy: bool) -> Result<(), Error> {
     #[cfg(feature = "isolator_pmp")]
     {
-        pmp::set_keystone(region_idx, pmp::PMP_ALL_PERM)
+        pmp::set_pmp(region_idx, pmp::PMP_ALL_PERM, destroy)
     }
     #[cfg(feature = "isolator_wg")]
     {
-        Ok(())
-        //wg::set_wg(region_idx)
+        if destroy {
+            wg::reset_wg(region_idx)
+        } else {
+            wg::set_wg(region_idx)
+        }
     }
     #[cfg(feature = "isolator_hybrid")]
     {
-        pmp::set_keystone(region_idx, pmp::PMP_ALL_PERM)
+        pmp::set_pmp(region_idx, pmp::PMP_ALL_PERM, destroy)
     }
 }
 
@@ -165,19 +168,18 @@ pub fn set_isolator(region_idx: usize) -> Result<(), Error> {
 //     }
 // }
 
-pub fn reset_isolator(region_idx: usize) -> Result<(), Error> {
+pub fn reset_isolator(region_idx: usize, destroy: bool) -> Result<(), Error> {
     #[cfg(feature = "isolator_pmp")]
     {
-        pmp::set_keystone(region_idx, pmp::PMP_NO_PERM)
+        pmp::set_pmp(region_idx, pmp::PMP_NO_PERM, destroy)
     }
     #[cfg(feature = "isolator_wg")]
     {
-        Ok(())
-        //wg::set_wg(region_idx)
+        wg::reset_wg(region_idx)
     }
     #[cfg(feature = "isolator_hybrid")]
     {
-        pmp::set_keystone(region_idx, pmp::PMP_NO_PERM)
+        pmp::set_pmp(region_idx, pmp::PMP_NO_PERM, destroy)
     }
 }
 
@@ -217,8 +219,8 @@ pub fn update() -> Result<(), Error> {
     #[cfg(feature = "isolator_pmp")]
     {
         pmp::reset(pmp::PMP_N_REG);
-        let _ = pmp::set_keystone(sm_region_id(), pmp::PMP_NO_PERM);
-        let _ = pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM);
+        let _ = pmp::set_pmp(sm_region_id(), pmp::PMP_NO_PERM, false);
+        let _ = pmp::set_pmp(os_region_id(), pmp::PMP_ALL_PERM, false);
         Ok(())
     }
     #[cfg(feature = "isolator_wg")]
@@ -228,7 +230,7 @@ pub fn update() -> Result<(), Error> {
     #[cfg(feature = "isolator_hybrid")]
     {
         pmp::reset(pmp::PMP_N_REG);
-        pmp::set_keystone(os_region_id(), pmp::PMP_ALL_PERM)?;
+        pmp::set_pmp(os_region_id(), pmp::PMP_ALL_PERM, false)?;
         Ok(())
     }
 }

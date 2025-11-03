@@ -202,7 +202,11 @@ pub fn region_free(region_idx: usize) -> Result<(), Error> {
     }
 
     let region = unsafe { REGIONS[region_idx].as_ref().unwrap() };
-    let reg_idx = region.index();
+    let reg_idx = if region.is_tor() {
+        region.index() + 1
+    } else {
+        region.index()
+    };
     unsafe {
         REGION_DEF_BITMAP &= !(1 << region_idx);
         REG_BITMAP &= !(1 << reg_idx);
@@ -464,14 +468,20 @@ pub fn reset_wg(region_idx: usize) -> Result<(), Error> {
     }
 
     let region = unsafe { REGIONS[region_idx].as_ref().unwrap() };
-    let reg_idx = region.index();
+    let reg_idx = if region.is_tor() {
+        region.index() + 1
+    } else {
+        region.index()
+    };
 
     let dram = WGChecker::new(WGC_DRAM_BASE);
-    dram.set_slot_cfg(
-        reg_idx,
-        WGC_CFG_ER | WGC_CFG_EW | WGC_CFG_IR | WGC_CFG_IW | region.mode,
-    );
-    dram.set_slot_addr(reg_idx, region.wgaddr_val());
+    if region.is_tor() {
+        dram.set_slot_cfg(reg_idx - 1, 0);
+        dram.set_slot_addr(reg_idx - 1, 0);
+        dram.set_slot_perm(reg_idx - 1, 0); // RW for w3 only
+    }
+    dram.set_slot_cfg(reg_idx, 0);
+    dram.set_slot_addr(reg_idx, 0);
     dram.set_slot_perm(reg_idx, 0); // RW for w3 only
 
     Ok(())
@@ -516,6 +526,13 @@ pub fn display() {
 
 pub fn display_regions() {
     hprintln!("Display WG Regions");
+    unsafe {
+        hprintln!(
+            "REGION_DEF_BITMAP : {:x}, REG_BITMAP: {:x}",
+            REGION_DEF_BITMAP,
+            REG_BITMAP
+        );
+    }
     hprintln!("+----------------+----------------+--------+--------+--------+----+");
     hprintln!("+     address    +     size       +  mode  +  perm  + overlap+ idx+");
     hprintln!("+----------------+----------------+--------+--------+--------+----+");
@@ -533,4 +550,5 @@ pub fn display_regions() {
             }
         }
     }
+    display();
 }
