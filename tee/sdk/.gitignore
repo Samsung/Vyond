@@ -1,0 +1,11 @@
+*.riscv
+*.eapp_riscv
+*.swp
+*.o
+*.a
+*~
+*_entry.h
+bins/
+build/
+build64/
+build32/
