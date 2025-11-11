@@ -1,3 +1,4 @@
+use crate::dbg;
 use crate::enclave;
 use bitflags::bitflags;
 
@@ -24,7 +25,7 @@ impl From<Perm> for i8 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct PermConfig {
     pub eid: usize,
     pub dyn_perm: Perm,
@@ -57,7 +58,9 @@ impl PermConfig {
     }
 
     pub fn decrement_map(&mut self) {
-        self.maps -= 1
+        if self.maps > 0 {
+            self.maps -= 1
+        }
     }
 }
 

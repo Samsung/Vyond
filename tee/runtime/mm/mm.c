@@ -4,6 +4,10 @@
 #include "mm/freemem.h"
 #include "mm/paging.h"
 #include "mm/vm.h"
+#include "mm/vm_defs.h"
+//#define VMA_MAX_N 16
+//static struct vma vma_list[VMA_MAX_N];
+//static int vma_count;
 
 /* Page table utilities */
 static pte*
@@ -280,3 +284,115 @@ map_with_reserved_page_table(
     __map_with_reserved_page_table_32(dram_base, dram_size, ptr, l2_pt);
 #endif
 }
+
+/*
+void
+map_pages(
+    uintptr_t vaddr_base, uintptr_t paddr_base, uintptr_t size,
+    unsigned int mode, enum vma_type type, rid_t rid) {
+  printf("Map pages %lx %lx %x\n", vaddr_base, paddr_base, size);
+  uintptr_t start_pa = PAGE_DOWN(paddr_base);
+  uintptr_t start_va = PAGE_DOWN(vaddr_base);
+  uintptr_t end_va   = PAGE_UP(start_va + size);
+
+  for (; start_va != end_va;
+       start_va += RISCV_PAGE_SIZE, start_pa += RISCV_PAGE_SIZE) {
+    pte* pte_entry = __walk_create(root_page_table, start_va, 0);
+    *pte_entry     = pte_create(ppn(start_pa), mode);
+  }
+  tlb_flush();
+  assert(translate(vaddr_base) == paddr_base);
+
+  add_vma(vaddr_base, paddr_base, size, type, rid);
+}
+
+void
+unmap_pages(struct vma* vma) {
+  uintptr_t start_pa = PAGE_DOWN(vma->paddr);
+  uintptr_t start_va = PAGE_DOWN(vma->vaddr);
+  uintptr_t end_va   = PAGE_UP(start_va + vma->size);
+
+  for (; start_va != end_va;
+       start_va += RISCV_PAGE_SIZE, start_pa += RISCV_PAGE_SIZE) {
+    pte* pte_entry = __walk_create(root_page_table, start_va, 0);
+    *pte_entry     = pte_create_invalid(0, 0);
+  }
+  tlb_flush();
+
+  remove_vma(vma);
+}
+
+uintptr_t
+find_va_range(uintptr_t size) {
+  uintptr_t req_pages = size >> RISCV_PAGE_BITS;
+  // Start looking at EYRIE_ANON_REGION_START for VA space
+  uintptr_t starting_vpn = vpn(EYRIE_ANON_REGION_START);
+  uintptr_t valid_pages;
+  while ((starting_vpn + req_pages) <= EYRIE_ANON_REGION_END) {
+    valid_pages = test_va_range(starting_vpn, req_pages);
+
+    if (req_pages == valid_pages) {
+      // Set a successful value if we allocate
+      // TODO free partial allocation on failure
+      return starting_vpn << RISCV_PAGE_BITS;
+      break;
+    } else
+      starting_vpn += valid_pages + 1;
+  }
+  return 0;
+}
+
+struct vma*
+get_vma_by_pa(uintptr_t pa) {
+  int i;
+  for (i = 0; i < vma_count; i++) {
+    if (pa >= vma_list[i].paddr && pa < vma_list[i].paddr + vma_list[i].size)
+      return vma_list + i;
+  }
+  return NULL;
+}
+
+struct vma*
+get_vma_by_va(uintptr_t va) {
+  int i;
+  for (i = 0; i < vma_count; i++) {
+    if (va >= vma_list[i].vaddr && va < vma_list[i].vaddr + vma_list[i].size)
+      return vma_list + i;
+  }
+  return NULL;
+}
+
+struct vma*
+get_vma_by_rid(rid_t rid) {
+  int i;
+  for (i = 0; i < vma_count; i++)
+    if (vma_list[i].type == VMA_TYPE_SHARED && vma_list[i].rid == rid)
+      return vma_list + i;
+  return NULL;
+}
+
+void
+add_vma(
+    uintptr_t vaddr, uintptr_t paddr, uintptr_t size, enum vma_type type,
+    rid_t rid) {
+  vma_list[vma_count].vaddr = vaddr;
+  vma_list[vma_count].paddr = paddr;
+  vma_list[vma_count].size  = size;
+  vma_list[vma_count].type  = type;
+  vma_list[vma_count].rid   = rid;
+
+  ++vma_count;
+}
+
+void
+remove_vma(struct vma* vma) {
+  struct vma* prev = vma;
+  ++vma;
+  while (vma != vma_list + vma_count) {
+    *prev = *vma;
+    prev  = vma;
+    ++vma;
+  }
+  --vma_count;
+}
+*/

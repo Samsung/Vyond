@@ -66,6 +66,7 @@ class Enclave {
       uintptr_t alternatePhysAddr);
   Error destroy();
   Error run(uintptr_t* ret = nullptr);
+  int getEID();
 };
 
 uint64_t

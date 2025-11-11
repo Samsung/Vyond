@@ -23,12 +23,11 @@ unsigned long sbi_sm_stop_enclave(struct sbi_trap_regs *regs, unsigned long requ
 unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs);
 
 unsigned long copy_enclave_create_args(uintptr_t src, struct keystone_sbi_create_t* dest);
-unsigned long sbi_sm_create_shm_region(struct sbi_trap_regs* regs,
-		unsigned long rid, unsigned long eid, unsigned long paddr, unsigned long size);
-unsigned long sbi_sm_change_shm_region(struct sbi_trap_regs* regs,
-		unsigned long rid, unsigned long dyn_perm);
-unsigned long sbi_sm_share_shm_region(struct sbi_trap_regs* regs,
-		unsigned long rid, unsigned long eid2share, unsigned long st_perm);
+unsigned long sbi_sm_create_shm_region(unsigned long *rid, uintptr_t pa, unsigned long size);
+unsigned long sbi_sm_map_shm_region(struct sbi_trap_regs *regs, unsigned long rid);
+unsigned long sbi_sm_unmap_shm_region(unsigned long rid);
+unsigned long sbi_sm_change_shm_region(unsigned long rid, unsigned long dyn_perm);
+unsigned long sbi_sm_share_shm_region(unsigned long rid, unsigned long eid2share, unsigned long st_perm);
 
 static int sbi_ecall_vyond_monitor_handler(
     unsigned long extid, unsigned long funcid,
@@ -94,21 +93,27 @@ static int sbi_ecall_vyond_monitor_handler(
         ((struct sbi_trap_regs *)regs)->mepc += 4;
         sbi_trap_exit(regs);
         break;
-    case SBI_SM_CREATE_SHM_REGION:
-	retval = sbi_sm_create_shm_region((struct sbi_trap_regs *)regs, regs->a0, regs->a1, regs->a2, regs->a3);
-	break;
-    case SBI_SM_CHANGE_SHM_REGION:
-	retval = sbi_sm_change_shm_region((struct sbi_trap_regs *)regs, regs->a0, regs->a1);
-	break;
-    case SBI_SM_SHARE_SHM_REGION:
-	retval = sbi_sm_share_shm_region((struct sbi_trap_regs *)regs, regs->a0, regs->a1, regs->a2);
-	break;
-    default:
-        retval = SBI_ERR_SM_NOT_IMPLEMENTED;
-        break;
-    }
-  
-    //sbi_printf("Retval = %lx\n", retval);
+	case SBI_SM_CREATE_SHM_REGION:
+		retval = sbi_sm_create_shm_region(out_val, (uintptr_t)regs->a0, (unsigned long)regs->a1);
+		break;
+	case SBI_SM_MAP_SHM_REGION:
+		retval = sbi_sm_map_shm_region((struct sbi_trap_regs *)regs, (uint32_t)regs->a0);
+		break;
+	case SBI_SM_UNMAP_SHM_REGION:
+		retval = sbi_sm_unmap_shm_region((uint32_t)regs->a0);
+		break;
+	case SBI_SM_CHANGE_SHM_REGION:
+		retval = sbi_sm_change_shm_region(regs->a0, regs->a1);
+		break;
+	case SBI_SM_SHARE_SHM_REGION:
+		retval = sbi_sm_share_shm_region(regs->a0, regs->a1, regs->a2);
+		break;
+	default:
+		retval = SBI_ERR_SM_NOT_IMPLEMENTED;
+		break;
+	}
+
+	// sbi_printf("Retval = %lx\n", retval);
 
     return retval;
 }
@@ -201,6 +206,7 @@ static void sbi_trap_error(const char *msg, int rc,
 		   regs->t6);
 
     sbi_sm_exit_enclave((struct sbi_trap_regs*) regs);
+unsigned long copy_enclave_create_args(uintptr_t src, struct keystone_sbi_create_t *dest);
 }
 
 

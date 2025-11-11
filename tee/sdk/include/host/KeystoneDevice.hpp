@@ -47,6 +47,7 @@ class KeystoneDevice {
   virtual Error run(uintptr_t* ret);
   virtual Error resume(uintptr_t* ret);
   virtual void* map(uintptr_t addr, size_t size);
+  virtual int getEID();
 };
 
 class MockKeystoneDevice : public KeystoneDevice {
@@ -67,6 +68,7 @@ class MockKeystoneDevice : public KeystoneDevice {
   Error run(uintptr_t* ret);
   Error resume(uintptr_t* ret);
   void* map(uintptr_t addr, size_t size);
+  int getEID();
 };
 
 }  // namespace Keystone

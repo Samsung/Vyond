@@ -9,12 +9,21 @@ extern uintptr_t runtime_va_start;
 
 /* root page table */
 extern pte* root_page_table;
+// extern pte secondary_page_tables[MAX_PT_COUNT][BIT(RISCV_PT_INDEX_BITS)]
+//     __attribute__((aligned(RISCV_PAGE_SIZE)));
 
 uintptr_t kernel_va_to_pa(void* ptr);
 uintptr_t __va(uintptr_t pa);
 uintptr_t __pa(uintptr_t va);
 
 #ifndef LOADER_BIN
+
+#define MAX_PT_COUNT 512
+
+#define PAGE_MODE_RT_FULL (PTE_R | PTE_W | PTE_X | PTE_A | PTE_D)
+#define PAGE_MODE_USER_FULL (PAGE_MODE_RT_FULL | PTE_U)
+#define PAGE_MODE_RT_DATA (PTE_R | PTE_W | PTE_A | PTE_D)
+#define PAGE_MODE_USER_DATA (PAGE_MODE_RT_DATA | PTE_U)
 
 extern void* rt_base;
 extern uintptr_t kernel_offset; // TODO: is this needed?

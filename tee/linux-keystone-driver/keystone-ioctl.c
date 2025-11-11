@@ -9,6 +9,13 @@
 #include <linux/uaccess.h>
 #include <linux/string.h>
 
+#define read_reg(reg)                                     \
+  ({                                                      \
+    unsigned long __v;                                    \
+    __asm__ __volatile__("mv %0, " #reg : "=r"(__v) : :); \
+    __v;                                                  \
+  })
+
 int __keystone_destroy_enclave(unsigned int ueid);
 
 int keystone_create_enclave(struct file *filep, unsigned long arg)
@@ -148,6 +155,7 @@ int utm_init_ioctl(struct file *filp, unsigned long arg)
 
   /* prepare for mmap */
   enclave->utm = utm;
+  enclave->epm_mapped = true;
 
   enclp->utm_paddr = __pa(utm->ptr);
 
@@ -168,6 +176,18 @@ int keystone_destroy_enclave(struct file *filep, unsigned long arg)
   }
   return ret;
 }
+
+struct enclave_shm
+{
+  uintptr_t pa;
+  uintptr_t size;
+};
+
+struct enclave_shm_list
+{
+  unsigned int shm_count;
+  struct enclave_shm shms[16];
+};
 
 int __keystone_destroy_enclave(unsigned int ueid)
 {
@@ -191,6 +211,10 @@ int __keystone_destroy_enclave(unsigned int ueid)
     keystone_warn("keystone_destroy_enclave: skipping (enclave does not exist)\n");
   }
 
+  // for (int i = 0; i < enclave_shm_list.shm_count; i++)
+  //{
+  //   destroy_shm_by_pa(enclave_shm_list.shm[i].pa);
+  // }
 
   destroy_enclave(enclave);
   enclave_idr_remove(ueid);
@@ -226,6 +250,137 @@ int keystone_resume_enclave(unsigned long data)
                arg->error, arg->value);
 
   return 0;
+}
+
+int create_shm(unsigned long args)
+{
+  struct sbiret ret;
+  struct keystone_ioctl_create_shm *ioctl_args = (struct keystone_ioctl_create_shm *)args;
+
+  unsigned long pa = allocate_shm(&host_enclave, ioctl_args->size);
+  if (!pa)
+    return -1;
+
+  ret = sbi_sm_create_shm(pa, ioctl_args->size);
+  if (ret.error)
+  {
+    keystone_err("keystone_create_shm: SBI call failed with error code %ld\n", ret.error);
+    destroy_shm_by_pa(pa);
+    goto error;
+  }
+
+  ioctl_args->rid = ret.value;
+  keystone_info("keystone_create_shm: paddr: %#lx, size: %ld, rid: %ld\n", pa, ioctl_args->size, ioctl_args->rid);
+
+  return 0;
+error:
+  return -EINVAL;
+}
+
+int map_shm(unsigned long arg)
+{
+  struct sbiret ret;
+  struct keystone_ioctl_map_shm *params = (struct keystone_ioctl_map_shm *)arg;
+  ret = sbi_sm_map_shm(params->rid);
+  if (ret.error)
+  {
+    keystone_err("keystone_map_shm: SBI call failed with error code %ld\n", ret.error);
+    goto error;
+  }
+  map_pending = 1;
+  map_pa = read_reg(a2);
+  map_size = read_reg(a3);
+  map_rid = params->rid;
+
+  params->size = map_size;
+
+  keystone_err("keystone_map_shm: rid %d pa %#lx size %#lx\n", map_rid, map_pa, map_size);
+  return 0;
+error:
+  return -EINVAL;
+}
+
+int unmap_shm(unsigned long arg)
+{
+  struct sbiret ret;
+  struct keystone_ioctl_unmap_shm *params = (struct keystone_ioctl_unmap_shm *)arg;
+  uintptr_t va = (uintptr_t)params->va;
+  int i;
+  for (i = 0; i < mem_mappings_n && mem_mappings[i].va != va; i++)
+    ;
+  if (i == mem_mappings_n)
+    return -1;
+  // int ret = SBI_CALL_1(SBI_SM_ELASTICLAVE_UNMAP, (uintptr_t)mem_mappings[i].uid);
+  ret = sbi_sm_unmap_shm(mem_mappings[i].rid);
+
+  if (ret.error)
+  {
+    keystone_err("keystone_unmap_shm: SBI call failed with error code %ld\n", ret.error);
+    goto error;
+  }
+
+  params->size = mem_mappings[i].size;
+
+  for (; i < mem_mappings_n - 1; i++)
+    mem_mappings[i] = mem_mappings[i + 1];
+  --mem_mappings_n;
+  return 0;
+error:
+  return -EINVAL;
+}
+
+int change_shm(unsigned long arg)
+{
+  struct sbiret ret;
+  struct keystone_ioctl_change_shm *params = (struct keystone_ioctl_change_shm *)arg;
+  ret = sbi_sm_change_shm(params->rid, params->perm);
+
+  if (ret.error)
+  {
+    keystone_err("keystone_change_shm: SBI call failed with error code %ld\n", ret.error);
+    goto error;
+  }
+
+  return ret.error;
+
+error:
+  return -EINVAL;
+}
+
+int share_shm(unsigned long arg)
+{
+  struct sbiret ret;
+  unsigned long ueid;
+  struct enclave *enclave;
+  struct keystone_ioctl_share_shm *params = (struct keystone_ioctl_share_shm *)arg;
+
+  ueid = params->eid;
+  enclave = get_enclave_by_id(ueid);
+
+  if (!enclave)
+  {
+    keystone_err("invalid enclave id\n");
+    return -EINVAL;
+  }
+
+  if (enclave->eid < 0)
+  {
+    keystone_err("real enclave does not exist\n");
+    return -EINVAL;
+  }
+
+  ret = sbi_sm_share_shm(params->rid, enclave->eid, params->perm);
+
+  if (ret.error)
+  {
+    keystone_err("keystone_share_shm: SBI call failed with error code %ld\n", ret.error);
+    goto error;
+  }
+
+  return ret.error;
+
+error:
+  return -EINVAL;
 }
 
 long keystone_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
@@ -267,8 +422,23 @@ long keystone_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
     case KEYSTONE_IOC_UTM_INIT:
       ret = utm_init_ioctl(filep, (unsigned long) data);
       break;
-    default:
-      return -ENOSYS;
+  case KEYSTONE_IOC_CREATE_SHM:
+    ret = create_shm((unsigned long)data);
+    break;
+  case KEYSTONE_IOC_MAP_SHM:
+    ret = map_shm((unsigned long)data);
+    break;
+  case KEYSTONE_IOC_UNMAP_SHM:
+    ret = unmap_shm((unsigned long)data);
+    break;
+  case KEYSTONE_IOC_CHANGE_SHM:
+    ret = change_shm((unsigned long)data);
+    break;
+  case KEYSTONE_IOC_SHARE_SHM:
+    ret = share_shm((unsigned long)data);
+    break;
+  default:
+    return -ENOSYS;
   }
 
   if (copy_to_user((void __user*) arg, data, ioc_size))

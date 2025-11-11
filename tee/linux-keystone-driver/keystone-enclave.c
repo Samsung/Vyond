@@ -8,6 +8,8 @@
 DEFINE_IDR(idr_enclave);
 DEFINE_MUTEX(idr_enclave_lock);
 
+struct list_head shm_list;
+
 #define ENCLAVE_IDR_MIN 0x1000
 #define ENCLAVE_IDR_MAX 0xffff
 
@@ -52,6 +54,9 @@ struct enclave* create_enclave(unsigned long min_pages)
 
   enclave->epm = kmalloc(sizeof(struct epm), GFP_KERNEL);
   enclave->is_init = true;
+  enclave->epm_mapped = false;
+  enclave->recent_shm = NULL;
+
   if (!enclave->epm)
   {
     keystone_err("failed to allocate epm\n");
@@ -102,4 +107,56 @@ struct enclave* get_enclave_by_id(unsigned int ueid)
   enclave = idr_find(&idr_enclave, ueid);
   mutex_unlock(&idr_enclave_lock);
   return enclave;
+}
+
+uintptr_t allocate_shm(struct enclave *enclave, uintptr_t size)
+{
+  if (!enclave)
+  {
+    keystone_err("invalid enclave id!\n");
+    return -1;
+  }
+
+  if (enclave->is_init)
+  {
+    keystone_err("uninitialised enclave sharing memory not supported for now!\n");
+    return -1;
+  }
+
+  struct shm *shm = (struct shm *)kmalloc(sizeof(struct shm), GFP_KERNEL);
+  if (!shm)
+  {
+    keystone_err("allocation error!\n");
+    return -1;
+  }
+
+  if (shm_init(shm, size))
+  {
+    kfree(shm);
+    return -1;
+  }
+
+  enclave->recent_shm = shm;
+  list_add(&shm->list, &shm_list);
+
+  return shm->pa;
+}
+
+int destroy_shm_by_pa(uintptr_t pa)
+{
+  struct list_head *shm_head = &shm_list, *ptr;
+  int cnt = 0;
+  for (ptr = shm_head->next; ptr != shm_head; ptr = ptr->next)
+  {
+    ++cnt;
+    struct shm *cur_entry = list_entry(ptr, struct shm, list);
+    if (cur_entry->pa == pa)
+    {
+      list_del_init(ptr);
+      shm_destroy(cur_entry);
+      kfree(cur_entry);
+      return 1;
+    }
+  }
+  return 0;
 }

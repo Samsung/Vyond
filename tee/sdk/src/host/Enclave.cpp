@@ -282,4 +282,9 @@ Enclave::registerOcallDispatch(OcallFunc func) {
   return Error::Success;
 }
 
+int
+Enclave::getEID() {
+  return pDevice->getEID();
+}
+
 }  // namespace Keystone

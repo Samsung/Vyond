@@ -6,6 +6,9 @@ uintptr_t runtime_va_start;
 
 /* root page table */
 pte* root_page_table;
+//pte secondary_page_tables[MAX_PT_COUNT][BIT(RISCV_PT_INDEX_BITS)]
+//    __attribute__((aligned(RISCV_PAGE_SIZE)));
+//size_t page_tables_count;
 
 #ifdef LOADER_BIN
 

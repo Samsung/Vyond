@@ -11,8 +11,8 @@
 #include "uaccess.h"
 #include "mm/mm.h"
 #include "util/rt_util.h"
-
 #include "call/syscall_nums.h"
+#include "keystone_user.h"
 
 #ifdef USE_IO_SYSCALL
 #include "call/io_wrap.h"
@@ -25,6 +25,13 @@
 #ifdef USE_NET_SYSCALL
 #include "call/net_wrap.h"
 #endif /* USE_NET_SYSCALL */
+
+#define read_reg(reg)                                     \
+  ({                                                      \
+    unsigned long __v;                                    \
+    __asm__ __volatile__("mv %0, " #reg : "=r"(__v) : :); \
+    __v;                                                  \
+  })
 
 extern void exit_enclave(uintptr_t arg0);
 
@@ -147,6 +154,43 @@ void init_edge_internals(){
   edge_call_init_internals(shared_buffer, shared_buffer_size);
 }
 
+static int
+handle_map_shm(rid_t rid, uintptr_t* ret_vaddr) {
+  /*
+  uintptr_t paddr, size;
+  // uintptr_t paddr_pa = kernel_va_to_pa(&paddr),
+  //           size_pa  = kernel_va_to_pa(&size);
+  uintptr_t ret = SBI_CALL_1(
+      SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE, SBI_SM_MAP_SHM_REGION,
+      (uintptr_t)rid);
+  if (ret) return 1;
+  paddr = read_reg(a2);
+  size  = read_reg(a3);
+
+  uintptr_t vaddr =
+      find_va_range(size);  // find virtual address range to map the region
+  *ret_vaddr = vaddr;
+  if (!vaddr) return 1;
+  map_pages(vaddr, paddr, size, PAGE_MODE_USER_DATA, VMA_TYPE_SHARED, rid);
+  */
+  return 0;  // TODO: better error handling
+}
+
+static int
+handle_unmap_shm(uintptr_t vaddr) {
+  /*
+  struct vma* vma = get_vma_by_va(vaddr);
+  if (vma == NULL || vma->type != VMA_TYPE_SHARED) return 1;
+
+  uintptr_t ret = SBI_CALL_1(
+      SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE, SBI_SM_UNMAP_SHM_REGION, vma->rid);
+  if (ret) return 1;
+  unmap_pages(vma);
+  */
+
+  return 0;
+}
+
 void handle_syscall(struct encl_ctx* ctx)
 {
   uintptr_t n = ctx->regs.a7;
@@ -160,7 +204,7 @@ void handle_syscall(struct encl_ctx* ctx)
 #if defined(USE_LINUX_SYSCALL) || defined(USE_NET_SYSCALL)
   uintptr_t arg5 = ctx->regs.a5;
 #endif /* IO_SYSCALL */
-  uintptr_t ret = 0;
+  uintptr_t ret = 0, ret_val = 0;
 
   ctx->regs.sepc += 4;
 
@@ -209,6 +253,14 @@ void handle_syscall(struct encl_ctx* ctx)
 
     break;
 
+      break;
+    case (RUNTIME_SYSCALL_MAP_SHM):
+      ret = handle_map_shm((rid_t)arg0, &ret_val);
+      copy_to_user((void*)arg1, &ret_val, sizeof(ret_val));
+      break;
+    case (RUNTIME_SYSCALL_UNMAP_SHM):
+      ret = handle_unmap_shm(arg0);
+      break;
 
 #ifdef USE_LINUX_SYSCALL
   case(SYS_clock_gettime):

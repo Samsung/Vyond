@@ -144,6 +144,11 @@ KeystoneDevice::initDevice(Params params) { // TODO: why does this need params
   return true;
 }
 
+int
+KeystoneDevice::getEID() {
+  return eid;
+}
+
 Error
 MockKeystoneDevice::create(uint64_t minPages) {
   eid = -1;
@@ -190,6 +195,11 @@ MockKeystoneDevice::map(uintptr_t addr, size_t size) {
 
 MockKeystoneDevice::~MockKeystoneDevice() {
   if (sharedBuffer) free(sharedBuffer);
+}
+
+int
+MockKeystoneDevice::getEID() {
+  return 0;
 }
 
 }  // namespace Keystone

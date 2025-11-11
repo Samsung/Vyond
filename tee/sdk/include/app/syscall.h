@@ -10,6 +10,7 @@
 #include "sealing.h"
 
 #include "shared/eyrie_call.h"
+#include "shared/keystone_user.h"
 
 #define SYSCALL(which, arg0, arg1, arg2, arg3, arg4)           \
   ({                                                           \
@@ -52,5 +53,11 @@ int
 get_sealing_key(
     struct sealing_key* sealing_key_struct, size_t sealing_key_struct_size,
     void* key_ident, size_t key_ident_size);
+
+void*
+map_shm(rid_t rid);
+
+int
+unmap_shm(void* addr);
 
 #endif /* syscall.h */

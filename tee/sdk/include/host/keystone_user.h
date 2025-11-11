@@ -26,6 +26,16 @@
   _IOR(KEYSTONE_IOC_MAGIC, 0x06, struct keystone_ioctl_create_enclave)
 #define KEYSTONE_IOC_UTM_INIT \
   _IOR(KEYSTONE_IOC_MAGIC, 0x07, struct keystone_ioctl_create_enclave)
+#define KEYSTONE_IOC_CREATE_SHM \
+  _IOR(KEYSTONE_IOC_MAGIC, 0x08, struct keystone_ioctl_create_shm)
+#define KEYSTONE_IOC_MAP_SHM \
+  _IOR(KEYSTONE_IOC_MAGIC, 0x09, struct keystone_ioctl_map_shm)
+#define KEYSTONE_IOC_UNMAP_SHM \
+  _IOR(KEYSTONE_IOC_MAGIC, 0x0a, struct keystone_ioctl_unmap_shm)
+#define KEYSTONE_IOC_CHANGE_SHM \
+  _IOR(KEYSTONE_IOC_MAGIC, 0x0b, struct keystone_ioctl_change_shm)
+#define KEYSTONE_IOC_SHARE_SHM \
+  _IOR(KEYSTONE_IOC_MAGIC, 0x0c, struct keystone_ioctl_share_shm)
 
 #define RT_NOEXEC 0
 #define USER_NOEXEC 1
@@ -56,6 +66,33 @@ struct keystone_ioctl_run_enclave {
   uintptr_t eid;
   uintptr_t error;
   uintptr_t value;
+};
+
+typedef uint32_t rid_t;
+struct keystone_ioctl_create_shm {
+  unsigned long size;
+  rid_t rid;
+};
+
+struct keystone_ioctl_map_shm {
+  rid_t rid;
+  unsigned long size;
+};
+
+struct keystone_ioctl_unmap_shm {
+  uintptr_t va;
+  unsigned long size;
+};
+
+struct keystone_ioctl_change_shm {
+  rid_t rid;
+  unsigned long perm;
+};
+
+struct keystone_ioctl_share_shm {
+  rid_t rid;
+  int eid;
+  unsigned long perm;
 };
 
 #endif

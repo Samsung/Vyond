@@ -144,3 +144,80 @@ int utm_init(struct utm *utm, size_t untrusted_size)
 
   return 0;
 }
+
+int shm_init(struct shm *shm, size_t shared_size)
+{
+  unsigned long order = 0;
+  unsigned long count;
+  unsigned long req_pages = PAGE_UP(shared_size) / PAGE_SIZE;
+  order = ilog2(req_pages - 1) + 1;
+  count = 0x1 << order;
+
+  shm->order = order;
+  INIT_LIST_HEAD(&shm->list);
+
+  int is_cma = 0;
+  void *ptr = NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+  if (order < 15 /*MAX_PAGE_ORDER*/)
+  {
+#else
+  if (order < MAX_ORDER)
+  {
+#endif
+    ptr = (void *)__get_free_pages(GFP_HIGHUSER, order);
+  }
+
+#ifdef CONFIG_CMA
+  /* If buddy allocator fails, we fall back to the CMA */
+  if (!ptr)
+  {
+    phys_addr_t device_phys_addr = 0;
+    // count = req_pages;
+    is_cma = 1;
+    ptr = (void *)dma_alloc_coherent(keystone_dev.this_device,
+                                     count << PAGE_SHIFT,
+                                     &device_phys_addr,
+                                     GFP_KERNEL | __GFP_DMA32);
+
+    if (!device_phys_addr)
+      ptr = NULL;
+  }
+#endif
+  if (!ptr)
+  {
+    keystone_err("failed to allocate %lu page(s)\n", count);
+    return -ENOMEM;
+  }
+
+  shm->ptr = ptr;
+  shm->pa = __pa((paddr_t)ptr);
+  shm->size = count * PAGE_SIZE;
+  shm->is_cma = is_cma;
+
+  if (shm->size != shared_size)
+  {
+    keystone_warn("bad! shared size is not good! %lx %lx\n", shm->size, shared_size);
+  }
+
+  return 0;
+}
+
+int shm_destroy(struct shm *shm)
+{
+  if (!shm->ptr || !shm->size)
+    return 0;
+
+  if (shm->is_cma)
+  {
+    dma_free_coherent(keystone_dev.this_device,
+                      shm->size,
+                      (void *)shm->ptr,
+                      shm->pa);
+  }
+  else
+  {
+    free_pages(shm->ptr, shm->order);
+  }
+  return 0;
+}

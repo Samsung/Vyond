@@ -33,3 +33,17 @@ get_sealing_key(
       sealing_key_struct, sealing_key_struct_size,
       key_ident, key_ident_size);
 }
+
+void*
+map_shm(rid_t rid) {
+  uintptr_t vaddr;
+  uintptr_t* vaddr_ptr = &vaddr;
+  int ret              = SYSCALL_2(RUNTIME_SYSCALL_MAP_SHM, rid, vaddr_ptr);
+  if (ret) vaddr = 0;
+  return (void*)vaddr;
+}
+
+int
+unmap_shm(void* addr) {
+  return SYSCALL_1(RUNTIME_SYSCALL_UNMAP_SHM, addr);
+}

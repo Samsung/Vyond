@@ -22,6 +22,17 @@ MODULE_AUTHOR("Dayeol Lee <dayeol@berkeley.edu>");
 MODULE_VERSION(DRV_VERSION);
 MODULE_LICENSE("Dual BSD/GPL");
 
+struct enclave host_enclave;
+int map_pending;
+rid_t map_rid;
+uintptr_t map_pa;
+unsigned long map_size;
+
+#define MAX_MEM_MAPPINGS (16)
+
+struct mem_mapping mem_mappings[MAX_MEM_MAPPINGS];
+int mem_mappings_n;
+
 static const struct file_operations keystone_fops = {
     .owner          = THIS_MODULE,
     .mmap           = keystone_mmap,
@@ -79,6 +90,7 @@ static int __init keystone_dev_init(void)
 {
   int  ret;
 
+  INIT_LIST_HEAD(&shm_list);
 
   ret = misc_register(&keystone_dev);
   if (ret < 0)
