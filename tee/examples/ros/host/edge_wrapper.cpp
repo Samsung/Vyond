@@ -130,11 +130,13 @@ void loan_shm_wrapper(void *buffer)
         return;
     }
 
-    unsigned long rid = loan_shm((loan_t *)call_args);
+    ret_val = loan_shm((loan_t *)call_args);
 
-    // This handles wrapping the data into an edge_data_t and storing it
-    // in the shared region.
-    if (edge_call_setup_wrapped_ret(edge_call, (void *)rid, sizeof(rid_t)))
+    uintptr_t data_section = edge_call_data_ptr();
+    memcpy((void *)data_section, &ret_val, sizeof(unsigned long));
+
+    if (edge_call_setup_ret(
+            edge_call, (void *)data_section, sizeof(unsigned long)))
     {
         edge_call->return_data.call_status = CALL_STATUS_BAD_PTR;
     }

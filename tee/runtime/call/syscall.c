@@ -156,10 +156,7 @@ void init_edge_internals(){
 
 static int
 handle_map_shm(rid_t rid, uintptr_t* ret_vaddr) {
-  /*
   uintptr_t paddr, size;
-  // uintptr_t paddr_pa = kernel_va_to_pa(&paddr),
-  //           size_pa  = kernel_va_to_pa(&size);
   uintptr_t ret = SBI_CALL_1(
       SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE, SBI_SM_MAP_SHM_REGION,
       (uintptr_t)rid);
@@ -167,12 +164,19 @@ handle_map_shm(rid_t rid, uintptr_t* ret_vaddr) {
   paddr = read_reg(a2);
   size  = read_reg(a3);
 
-  uintptr_t vaddr =
-      find_va_range(size);  // find virtual address range to map the region
-  *ret_vaddr = vaddr;
-  if (!vaddr) return 1;
-  map_pages(vaddr, paddr, size, PAGE_MODE_USER_DATA, VMA_TYPE_SHARED, rid);
-  */
+  uintptr_t va = shm_va_ptr;
+  *ret_vaddr   = va;
+  while (va < shm_va_ptr + size) {
+    if (!map_page(vpn(va), ppn(paddr), PTE_W | PTE_R | PTE_D)) {
+      return -1;
+    }
+    va += RISCV_PAGE_SIZE;
+    paddr += RISCV_PAGE_SIZE;
+  }
+  printf(
+      "[RUNTIME] map_shm rid: %d paddr: %#x size: %d va: %#x", rid, paddr, size,
+      va);
+
   return 0;  // TODO: better error handling
 }
 

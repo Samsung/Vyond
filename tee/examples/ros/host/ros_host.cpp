@@ -10,8 +10,7 @@
 
 using namespace Keystone;
 
-// Enclave enc_publisher, enc_subscriber;
-Enclave enc_publisher;
+Enclave enc_publisher, enc_subscriber;
 SharedMemory shm;
 void *shm_base;
 rid_t rid;
@@ -44,24 +43,28 @@ void init_shm()
 {
 
   rid = shm.createShm(0x1000);
-  // shm.mapShm(rid);
   shm.changeShm(rid, 7);
   shm.shareShm(rid, enc_publisher.getEID(), 7);
   // shm.shareShm(rid, enc_subscriber.getEID(), 7);
+  printf("[HOST] init_shm created rid %d\n", rid);
 }
 
 void *publisher_run(void *arg)
 {
 
+  printf("[HOST][PUBLISHER] start running...\n");
   enc_publisher.run();
+  printf("[HOST][PUBLISHER] done ...\n");
   return NULL;
 }
 
-// void *subscriber_run(void *arg)
-//{
-//   enc_subscriber.run();
-//   return NULL;
-// }
+void *subscriber_run(void *arg)
+{
+  printf("[HOST][SUBSCRIBER] start running...\n");
+  enc_subscriber.run();
+  printf("[HOST][SUBSCRIBER] start done...\n");
+  return NULL;
+}
 
 unsigned long
 print_buffer(char *str)
@@ -72,7 +75,7 @@ print_buffer(char *str)
 
 void print_value(unsigned long val)
 {
-  printf("[HOST] Enclave said value: %u\n", val);
+  printf("[HOST] Enclave said value: %u (%#x)\n", val, val);
   return;
 }
 
@@ -85,47 +88,51 @@ get_host_string()
 
 unsigned long loan_shm(loan_t *loan)
 {
-  printf("[HOST] loan_shm size: %d perm: %#x\n", loan->size, loan->perm);
+  printf("[HOST] loan_shm size: %d perm: %#x rid: %d\n", loan->size, loan->perm, rid);
   return rid;
-}
-
-int main(int argc, char **argv)
-{
-  printf("[HOST] Entering main function of host...\n");
-  Enclave enclave;
-  Params params;
-  params.setFreeMemSize(256 * 1024);
-  params.setUntrustedSize(256 * 1024);
-
-  enclave.init(argv[1], argv[3], argv[4], params);
-  edge_init(&enclave);
-
-  uintptr_t encl_ret;
-  enclave.run(&encl_ret);
-
-  printf("[HOST] Terminating host...\n");
-
-  return 0;
 }
 
 // int main(int argc, char **argv)
 //{
 //   printf("[HOST] Entering main function of host...\n");
+//   Enclave enclave;
+//   Params params;
+//   params.setFreeMemSize(256 * 1024);
+//   params.setUntrustedSize(256 * 1024);
 //
-//   create_enclaves(argv[1], argv[2], argv[3], argv[4]);
-//   init_shm();
-//   edge_init(&enc_publisher);
-//   // edge_init(&enc_subscriber);
+//   enclave.init(argv[1], argv[3], argv[4], params);
+//   edge_init(&enclave);
 //
-//   pthread_t thr_publisher, thr_subscriber;
-//   pthread_create(&thr_publisher, 0, publisher_run, (void *)argv);
-//   // pthread_create(&thr_subscriber, 0, subscriber_run, (void *)argv);
+//   rid = shm.createShm(0x1000);
+//   shm.changeShm(rid, 7);
+//   shm.shareShm(rid, enclave.getEID(), 7);
+//   printf("[HOST] init_shm created rid %d\n", rid);
 //
-//   pthread_join(thr_publisher, NULL);
-//   // pthread_join(thr_subscriber, NULL);
+//   uintptr_t encl_ret;
+//   enclave.run(&encl_ret);
 //
 //   printf("[HOST] Terminating host...\n");
 //
 //   return 0;
 // }
-//
+
+int main(int argc, char **argv)
+{
+  printf("[HOST] Entering main function of host...\n");
+
+  create_enclaves(argv[1], argv[2], argv[3], argv[4]);
+  init_shm();
+  edge_init(&enc_publisher);
+  // edge_init(&enc_subscriber);
+
+  pthread_t thr_publisher, thr_subscriber;
+  pthread_create(&thr_publisher, 0, publisher_run, (void *)argv);
+  // pthread_create(&thr_subscriber, 0, subscriber_run, (void *)argv);
+
+  pthread_join(thr_publisher, NULL);
+  // pthread_join(thr_subscriber, NULL);
+
+  printf("[HOST] Terminating host...\n");
+
+  return 0;
+}

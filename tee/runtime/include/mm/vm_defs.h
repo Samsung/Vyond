@@ -33,6 +33,7 @@
 /* Starting address of the enclave memory */
 
 #if __riscv_xlen == 64
+#define RUNTIME_SHARED_START 0xffffffffe0000000
 #define RUNTIME_VA_START 0xffffffffc0000000
 #define EYRIE_LOAD_START 0xffffffff00000000
 #define EYRIE_PAGING_START 0xffffffff40000000
