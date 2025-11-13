@@ -1,3 +1,4 @@
+use crate::cpu;
 use crate::dbg;
 use crate::enclave;
 use crate::trap::TrapFrame;
@@ -54,7 +55,7 @@ pub extern "C" fn sbi_sm_enter_enclave(regs: &mut TrapFrame, eid: usize) -> isiz
 #[no_mangle]
 pub extern "C" fn sbi_sm_resume_enclave(regs: &mut TrapFrame, eid: usize) -> isize {
     dbg!("[resume_enclave] eid: {:?}", eid);
-    let ret = match enclave::resume_enclave(regs) {
+    let ret = match enclave::resume_enclave(regs, eid) {
         Ok(_) => Error::Success,
         Err(err) => {
             if err != Error::Interrupted && err != Error::EdgeCallHost {
@@ -70,7 +71,11 @@ pub extern "C" fn sbi_sm_resume_enclave(regs: &mut TrapFrame, eid: usize) -> isi
 
 #[no_mangle]
 pub extern "C" fn sbi_sm_stop_enclave(regs: &mut TrapFrame, request: usize) -> isize {
-    dbg!("[stop_enclave] request: {:?}", request);
+    dbg!(
+        "[stop_enclave] eid {:?} request: {:?}",
+        cpu::get_enclave_id(),
+        request
+    );
     let ret = match enclave::stop_enclave(regs, request) {
         Ok(_) => Error::Success,
         Err(err) => {
@@ -87,7 +92,7 @@ pub extern "C" fn sbi_sm_stop_enclave(regs: &mut TrapFrame, request: usize) -> i
 
 #[no_mangle]
 pub extern "C" fn sbi_sm_exit_enclave(regs: &mut TrapFrame) -> isize {
-    dbg!("[exit_enclave]");
+    dbg!("[exit_enclave] eid {:?}", cpu::get_enclave_id());
     let ret = match enclave::exit_enclave(regs) {
         Ok(_) => Error::Success,
         Err(err) => {

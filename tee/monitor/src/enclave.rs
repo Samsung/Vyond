@@ -449,8 +449,11 @@ pub fn enter_enclave(tf: &mut TrapFrame, eid: usize) -> Result<(), Error> {
     Err(Error::Invalid)
 }
 
-pub fn resume_enclave(tf: &mut TrapFrame) -> Result<(), Error> {
-    if let Some(enclave) = find_enclave(cpu::get_enclave_id()) {
+pub fn resume_enclave(tf: &mut TrapFrame, eid: usize) -> Result<(), Error> {
+    if cpu::is_enclave_context() {
+        return Err(Error::Invalid);
+    }
+    if let Some(enclave) = find_enclave(eid) {
         let mut runstate = enclave.state.lock();
         let resumable = (runstate.state == State::Running || runstate.state == State::Stopped)
             && runstate.count < MAX_ENCLAVE_THREADS;
