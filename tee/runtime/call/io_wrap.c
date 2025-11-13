@@ -23,7 +23,7 @@
 #define MAX_STRACE_PRINT 20
 
 uintptr_t io_syscall_sync(){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
 
   edge_syscall->syscall_num = SYS_sync;
 
@@ -35,7 +35,7 @@ uintptr_t io_syscall_sync(){
 }
 
 uintptr_t io_syscall_ftruncate(int fd, off_t offset){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_ftruncate* args = (sargs_SYS_ftruncate*)edge_syscall->data;
   edge_syscall->syscall_num = SYS_ftruncate;
 
@@ -50,7 +50,7 @@ uintptr_t io_syscall_ftruncate(int fd, off_t offset){
   return ret;
 }
 uintptr_t io_syscall_fsync(int fd){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_fsync* args = (sargs_SYS_fsync*)edge_syscall->data;
   edge_syscall->syscall_num = SYS_fsync;
 
@@ -65,7 +65,7 @@ uintptr_t io_syscall_fsync(int fd){
 }
 
 uintptr_t io_syscall_lseek(int fd, off_t offset, int whence){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_lseek* args = (sargs_SYS_lseek*)edge_syscall->data;
   edge_syscall->syscall_num = SYS_lseek;
 
@@ -83,7 +83,7 @@ uintptr_t io_syscall_lseek(int fd, off_t offset, int whence){
 }
 
 uintptr_t io_syscall_close(int fd){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_close* args = (sargs_SYS_close*)edge_syscall->data;
   edge_syscall->syscall_num = SYS_close;
 
@@ -98,7 +98,7 @@ uintptr_t io_syscall_close(int fd){
 }
 
 uintptr_t io_syscall_read(int fd, void* buf, size_t len){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_read* args = (sargs_SYS_read*)edge_syscall->data;
   uintptr_t ret = -1;
   edge_syscall->syscall_num = SYS_read;
@@ -106,7 +106,7 @@ uintptr_t io_syscall_read(int fd, void* buf, size_t len){
   args->len = len;
 
   // Sanity check that the read buffer will fit in the shared memory
-  if(edge_call_check_ptr_valid((uintptr_t)args->buf, len) != 0){
+  if(edge_call_check_ptr_valid((uintptr_t)args->buf, len, shared_buffer, shared_buffer_size) != 0){
     goto done;
   }
 
@@ -138,7 +138,7 @@ uintptr_t io_syscall_write(int fd, void* buf, size_t len){
   /*   print_strace("[write] \"%s\"\r\n", (char*)lbuf); */
   /* } */
 
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_write* args = (sargs_SYS_write*)edge_syscall->data;
   uintptr_t ret = -1;
 
@@ -147,7 +147,7 @@ uintptr_t io_syscall_write(int fd, void* buf, size_t len){
   args->len = len;
 
   // Sanity check that the write buffer will fit in the shared memory
-  if(edge_call_check_ptr_valid((uintptr_t)args->buf, len) != 0){
+  if(edge_call_check_ptr_valid((uintptr_t)args->buf, len, shared_buffer, shared_buffer_size) != 0){
     goto done;
   }
 
@@ -166,7 +166,7 @@ uintptr_t io_syscall_write(int fd, void* buf, size_t len){
 
 uintptr_t io_syscall_openat(int dirfd, char* path,
                             int flags, mode_t mode){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_openat* args = (sargs_SYS_openat*)edge_syscall->data;
 
   edge_syscall->syscall_num = SYS_openat;
@@ -178,7 +178,7 @@ uintptr_t io_syscall_openat(int dirfd, char* path,
   size_t pathlen;
   ALLOW_USER_ACCESS(pathlen = _strlen(path)+1);
   // Sanity check that the buffer will fit in the shared memory
-  if(edge_call_check_ptr_valid((uintptr_t)args->path, pathlen) != 0){
+  if(edge_call_check_ptr_valid((uintptr_t)args->path, pathlen, shared_buffer, shared_buffer_size) != 0){
     goto done;
   }
   copy_from_user(args->path, path, pathlen);
@@ -200,7 +200,7 @@ uintptr_t io_syscall_openat(int dirfd, char* path,
 
 uintptr_t io_syscall_unlinkat(int dirfd, char* path,
                               int flags){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_unlinkat* args = (sargs_SYS_unlinkat*)edge_syscall->data;
   uintptr_t ret = -1;
 
@@ -210,7 +210,7 @@ uintptr_t io_syscall_unlinkat(int dirfd, char* path,
   size_t pathlen;
   ALLOW_USER_ACCESS(pathlen = _strlen(path)+1);
   // Sanity check that the buffer will fit in the shared memory
-  if(edge_call_check_ptr_valid((uintptr_t)args->path, pathlen) != 0){
+  if(edge_call_check_ptr_valid((uintptr_t)args->path, pathlen, shared_buffer, shared_buffer_size) != 0){
     goto done;
   }
   copy_from_user(args->path, path, pathlen);
@@ -264,7 +264,7 @@ uintptr_t io_syscall_readv(int fd, const struct iovec *iov, int iovcnt){
 
 uintptr_t io_syscall_fstatat(int dirfd, char *pathname, struct stat *statbuf,
                                 int flags){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_fstatat* args = (sargs_SYS_fstatat*)edge_syscall->data;
   uintptr_t ret = -1;
 
@@ -275,7 +275,7 @@ uintptr_t io_syscall_fstatat(int dirfd, char *pathname, struct stat *statbuf,
   size_t pathlen;
   ALLOW_USER_ACCESS(pathlen = _strlen(pathname)+1);
   // Sanity check that the buffer will fit in the shared memory
-  if(edge_call_check_ptr_valid((uintptr_t)args->pathname, pathlen) != 0){
+  if(edge_call_check_ptr_valid((uintptr_t)args->pathname, pathlen, shared_buffer, shared_buffer_size) != 0){
     goto done;
   }
   copy_from_user(args->pathname, pathname, pathlen);
@@ -300,7 +300,7 @@ uintptr_t io_syscall_fstatat(int dirfd, char *pathname, struct stat *statbuf,
 uintptr_t io_syscall_pipe(int *fds){
 
   uintptr_t ret = -1;
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   edge_syscall->syscall_num = SYS_pipe2;
 
   int *args = (int *) edge_syscall->data;
@@ -319,7 +319,7 @@ uintptr_t io_syscall_pipe(int *fds){
 
 uintptr_t io_syscall_epoll_create(int size){
   uintptr_t ret = -1;
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   edge_syscall->syscall_num = SYS_epoll_create1;
 
   sargs_SYS_epoll_create1 *args = (sargs_SYS_epoll_create1 *) edge_syscall->data;
@@ -337,7 +337,7 @@ uintptr_t io_syscall_epoll_create(int size){
 
 uintptr_t io_syscall_epoll_ctl(int epfd, int op, int fd, uintptr_t event){
   uintptr_t ret = -1;
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   edge_syscall->syscall_num = SYS_epoll_ctl;
 
   sargs_SYS_epoll_ctl *args = (sargs_SYS_epoll_ctl *) edge_syscall->data;
@@ -356,7 +356,7 @@ uintptr_t io_syscall_epoll_ctl(int epfd, int op, int fd, uintptr_t event){
 }
 
 uintptr_t io_syscall_fcntl(int fd, int cmd, uintptr_t arg){ 
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_fcntl* args = (sargs_SYS_fcntl*)edge_syscall->data;
   uintptr_t ret = -1;
 
@@ -367,7 +367,7 @@ uintptr_t io_syscall_fcntl(int fd, int cmd, uintptr_t arg){
   size_t totalsize;
   if (cmd == F_SETLK || cmd == F_SETLKW || cmd == F_GETLK) {
     print_strace("F_SETLK, FSETLKW, or FGETLK");
-    if(edge_call_check_ptr_valid((uintptr_t)args->arg, sizeof(struct flock)) != 0){
+    if(edge_call_check_ptr_valid((uintptr_t)args->arg, sizeof(struct flock), shared_buffer, shared_buffer_size) != 0){
       print_strace("Ptr not valid");
       goto done;
     }
@@ -394,7 +394,7 @@ uintptr_t io_syscall_fcntl(int fd, int cmd, uintptr_t arg){
 }
 
 uintptr_t io_syscall_getcwd(char* buf, size_t size){ 
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_getcwd* args = (sargs_SYS_getcwd*)edge_syscall->data;
   // char* syscall_ret = NULL;
 
@@ -416,7 +416,7 @@ uintptr_t io_syscall_chdir(char* path) {
 
   path = "./"; 
   uintptr_t ret = -1;
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_chdir* args = (sargs_SYS_chdir*)edge_syscall->data;
   // char* syscall_ret = NULL;
 
@@ -434,7 +434,7 @@ uintptr_t io_syscall_chdir(char* path) {
 
 uintptr_t io_syscall_epoll_pwait(int epfd, uintptr_t events, int maxevents, int timeout) {
   uintptr_t ret = -1;
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_epoll_pwait* args = (sargs_SYS_epoll_pwait*) edge_syscall->data;
 
   edge_syscall->syscall_num = SYS_epoll_pwait;
@@ -455,7 +455,7 @@ uintptr_t io_syscall_epoll_pwait(int epfd, uintptr_t events, int maxevents, int 
 
 uintptr_t io_syscall_renameat2(int olddirfd,  uintptr_t oldpath, int newdirfd, uintptr_t newpath, unsigned int flags){
   uintptr_t ret = -1;
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_renameat2* args = (sargs_SYS_renameat2*) edge_syscall->data;
 
   edge_syscall->syscall_num = SYS_renameat2;
@@ -476,7 +476,7 @@ uintptr_t io_syscall_renameat2(int olddirfd,  uintptr_t oldpath, int newdirfd, u
 
 uintptr_t io_syscall_umask(int mask){
   uintptr_t ret = -1;
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_umask* args = (sargs_SYS_umask*) edge_syscall->data;
 
   edge_syscall->syscall_num = SYS_umask;
@@ -490,7 +490,7 @@ uintptr_t io_syscall_umask(int mask){
 }
   
 uintptr_t io_syscall_fstat(int fd, struct stat *statbuf){
-  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+  struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr(shared_buffer, shared_buffer_size);
   sargs_SYS_fstat* args = (sargs_SYS_fstat*)edge_syscall->data;
   uintptr_t ret = -1;
 

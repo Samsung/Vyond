@@ -12,7 +12,7 @@
    so we make it explicit */
 typedef size_t edge_data_offset;
 
-typedef void (*edgecallwrapper)(void*);
+typedef void (*edgecallwrapper)(void*, size_t size);
 
 #define MAX_EDGE_CALL 10
 

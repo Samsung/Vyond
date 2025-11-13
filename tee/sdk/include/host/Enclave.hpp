@@ -28,7 +28,7 @@ extern "C" {
 
 namespace Keystone {
 
-typedef std::function<void(void*)> OcallFunc;
+typedef std::function<void(void*, size_t)> OcallFunc;
 
 class Enclave {
  private:

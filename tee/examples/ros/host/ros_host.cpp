@@ -80,9 +80,9 @@ get_host_string()
   return longstr;
 }
 
-unsigned long loan_shm(loan_t *loan)
+unsigned long loan_shm()
 {
-  printf("[HOST] loan_shm size: %d perm: %#x rid: %d\n", loan->size, loan->perm, rid);
+  printf("[HOST] loan_shm rid: %d\n", rid);
   return rid;
 }
 

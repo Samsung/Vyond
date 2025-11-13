@@ -12,13 +12,13 @@ edgecallwrapper edge_call_table[MAX_EDGE_CALL];
 
 /* Registered handler for incoming edge calls */
 void
-incoming_call_dispatch(void* buffer) {
+incoming_call_dispatch(void* buffer, size_t size) {
   struct edge_call* edge_call = (struct edge_call*)buffer;
 
 #ifdef IO_SYSCALL_WRAPPING
   /* If its a syscall handle it specially */
   if (edge_call->call_id == EDGECALL_SYSCALL) {
-    incoming_syscall(buffer);
+    incoming_syscall(buffer, size);
     return;
   }
 #endif /*  IO_SYSCALL_WRAPPING */
@@ -29,7 +29,7 @@ incoming_call_dispatch(void* buffer) {
     /* Fatal error */
     goto fatal_error;
   }
-  edge_call_table[edge_call->call_id](buffer);
+  edge_call_table[edge_call->call_id](buffer, size);
   return;
 
 fatal_error:

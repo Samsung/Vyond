@@ -22,12 +22,13 @@ void edge_init(Keystone::Enclave *enclave)
     register_call(OCALL_GET_STRING, get_host_string_wrapper);
     register_call(OCALL_LOAN_SHM, loan_shm_wrapper);
 
-    edge_call_init_internals(
-        (uintptr_t)enclave->getSharedBuffer(), enclave->getSharedBufferSize());
+    //edge_call_init_internals(
+    //    (uintptr_t)enclave->getSharedBuffer(), enclave->getSharedBufferSize());
 }
 
-void print_buffer_wrapper(void *buffer)
+void print_buffer_wrapper(void *buffer, size_t _shared_len)
 {
+    uintptr_t _shared_start = (uintptr_t)buffer;
     /* For now we assume the call struct is at the front of the shared
      * buffer. This will have to change to allow nested calls. */
     struct edge_call *edge_call = (struct edge_call *)buffer;
@@ -35,7 +36,7 @@ void print_buffer_wrapper(void *buffer)
     uintptr_t call_args;
     unsigned long ret_val;
     size_t arg_len;
-    if (edge_call_args_ptr(edge_call, &call_args, &arg_len) != 0)
+    if (edge_call_args_ptr(edge_call, &call_args, &arg_len, _shared_start, _shared_len) != 0)
     {
         edge_call->return_data.call_status = CALL_STATUS_BAD_OFFSET;
         return;
@@ -45,12 +46,12 @@ void print_buffer_wrapper(void *buffer)
 
     // We are done with the data section for args, use as return region
     // TODO safety check?
-    uintptr_t data_section = edge_call_data_ptr();
+    uintptr_t data_section = edge_call_data_ptr(_shared_start, _shared_len);
 
     memcpy((void *)data_section, &ret_val, sizeof(unsigned long));
 
     if (edge_call_setup_ret(
-            edge_call, (void *)data_section, sizeof(unsigned long)))
+            edge_call, (void *)data_section, sizeof(unsigned long), _shared_start, _shared_len))
     {
         edge_call->return_data.call_status = CALL_STATUS_BAD_PTR;
     }
@@ -62,8 +63,9 @@ void print_buffer_wrapper(void *buffer)
     return;
 }
 
-void print_value_wrapper(void *buffer)
+void print_value_wrapper(void *buffer, size_t _shared_len)
 {
+    uintptr_t _shared_start = (uintptr_t)buffer;
     /* For now we assume the call struct is at the front of the shared
      * buffer. This will have to change to allow nested calls. */
     struct edge_call *edge_call = (struct edge_call *)buffer;
@@ -71,7 +73,7 @@ void print_value_wrapper(void *buffer)
     uintptr_t call_args;
     unsigned long ret_val;
     size_t args_len;
-    if (edge_call_args_ptr(edge_call, &call_args, &args_len) != 0)
+    if (edge_call_args_ptr(edge_call, &call_args, &args_len, _shared_start, _shared_len) != 0)
     {
         edge_call->return_data.call_status = CALL_STATUS_BAD_OFFSET;
         return;
@@ -83,8 +85,9 @@ void print_value_wrapper(void *buffer)
     return;
 }
 
-void get_host_string_wrapper(void *buffer)
+void get_host_string_wrapper(void *buffer, size_t _shared_len)
 {
+    uintptr_t _shared_start = (uintptr_t)buffer;
     /* For now we assume the call struct is at the front of the shared
      * buffer. This will have to change to allow nested calls. */
     struct edge_call *edge_call = (struct edge_call *)buffer;
@@ -92,7 +95,7 @@ void get_host_string_wrapper(void *buffer)
     uintptr_t call_args;
     unsigned long ret_val;
     size_t args_len;
-    if (edge_call_args_ptr(edge_call, &call_args, &args_len) != 0)
+    if (edge_call_args_ptr(edge_call, &call_args, &args_len, _shared_start, _shared_len) != 0)
     {
         edge_call->return_data.call_status = CALL_STATUS_BAD_OFFSET;
         return;
@@ -103,7 +106,7 @@ void get_host_string_wrapper(void *buffer)
 
     // This handles wrapping the data into an edge_data_t and storing it
     // in the shared region.
-    if (edge_call_setup_wrapped_ret(edge_call, (void *)host_str, host_str_len))
+    if (edge_call_setup_wrapped_ret(edge_call, (void *)host_str, host_str_len, _shared_start, _shared_len))
     {
         edge_call->return_data.call_status = CALL_STATUS_BAD_PTR;
     }
@@ -115,28 +118,31 @@ void get_host_string_wrapper(void *buffer)
     return;
 }
 
-void loan_shm_wrapper(void *buffer)
+void loan_shm_wrapper(void *buffer, size_t _shared_len)
 {
+    uintptr_t _shared_start = (uintptr_t)buffer;
     /* For now we assume the call struct is at the front of the shared
      * buffer. This will have to change to allow nested calls. */
     struct edge_call *edge_call = (struct edge_call *)buffer;
 
+  /*
     uintptr_t call_args;
-    unsigned long ret_val;
     size_t args_len;
-    if (edge_call_args_ptr(edge_call, &call_args, &args_len) != 0)
+    if (edge_call_args_ptr(edge_call, &call_args, &args_len, _shared_start, _shared_len) != 0)
     {
         edge_call->return_data.call_status = CALL_STATUS_BAD_OFFSET;
         return;
     }
+  */
 
-    ret_val = loan_shm((loan_t *)call_args);
+    unsigned long ret_val;
+    ret_val = loan_shm();
 
-    uintptr_t data_section = edge_call_data_ptr();
+    uintptr_t data_section = edge_call_data_ptr(_shared_start, _shared_len);
     memcpy((void *)data_section, &ret_val, sizeof(unsigned long));
 
     if (edge_call_setup_ret(
-            edge_call, (void *)data_section, sizeof(unsigned long)))
+            edge_call, (void *)data_section, sizeof(unsigned long), _shared_start, _shared_len))
     {
         edge_call->return_data.call_status = CALL_STATUS_BAD_PTR;
     }

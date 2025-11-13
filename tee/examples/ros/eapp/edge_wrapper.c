@@ -42,10 +42,10 @@ void ocall_get_string(struct edge_data *retdata)
     return;
 }
 
-unsigned long ocall_loan_shm(void *data, size_t data_len)
+unsigned long ocall_loan_shm()
 {
     unsigned long retval;
-    ocall(OCALL_LOAN_SHM, data, data_len, &retval, sizeof(unsigned long));
+    ocall(OCALL_LOAN_SHM, NULL, 0, &retval, sizeof(unsigned long));
 
     return retval;
 }

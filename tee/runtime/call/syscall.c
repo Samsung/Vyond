@@ -46,7 +46,7 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
   edge_call->call_id = EDGECALL_SYSCALL;
 
 
-  if(edge_call_setup_call(edge_call, (void*)syscall_data_ptr, data_len) != 0){
+  if(edge_call_setup_call(edge_call, (void*)syscall_data_ptr, data_len, shared_buffer, shared_buffer_size) != 0){
     return -1;
   }
 
@@ -62,7 +62,7 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
 
   uintptr_t return_ptr;
   size_t return_len;
-  if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len) != 0){
+  if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len, shared_buffer, shared_buffer_size) != 0){
     return -1;
   }
 
@@ -87,7 +87,7 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
    * dispatch the ocall to host */
 
   edge_call->call_id = call_id;
-  uintptr_t buffer_data_start = edge_call_data_ptr();
+  uintptr_t buffer_data_start = edge_call_data_ptr(shared_buffer, shared_buffer_size);
 
   if(data_len > (shared_buffer_size - (buffer_data_start - shared_buffer))){
     goto ocall_error;
@@ -95,7 +95,7 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
   //TODO safety check on source
   copy_from_user((void*)buffer_data_start, (void*)data, data_len);
 
-  if(edge_call_setup_call(edge_call, (void*)buffer_data_start, data_len) != 0){
+  if(edge_call_setup_call(edge_call, (void*)buffer_data_start, data_len, shared_buffer, shared_buffer_size) != 0){
     goto ocall_error;
   }
 
@@ -116,7 +116,7 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
 
   uintptr_t return_ptr;
   size_t ret_len_untrusted;
-  if(edge_call_ret_ptr(edge_call, &return_ptr, &ret_len_untrusted) != 0){
+  if(edge_call_ret_ptr(edge_call, &return_ptr, &ret_len_untrusted, shared_buffer, shared_buffer_size) != 0){
     goto ocall_error;
   }
 
@@ -143,7 +143,7 @@ uintptr_t handle_copy_from_shared(void* dst, uintptr_t offset, size_t size){
    * shared region. */
   uintptr_t src_ptr;
   if(edge_call_get_ptr_from_offset(offset, size,
-				   &src_ptr) != 0){
+				   &src_ptr, shared_buffer, shared_buffer_size) != 0){
     return 1;
   }
 
@@ -151,7 +151,8 @@ uintptr_t handle_copy_from_shared(void* dst, uintptr_t offset, size_t size){
 }
 
 void init_edge_internals(){
-  edge_call_init_internals(shared_buffer, shared_buffer_size);
+  // Do not call edge_call_init_internals
+  //edge_call_init_internals(shared_buffer, shared_buffer_size);
 }
 
 uintptr_t shm_va_ptr = RUNTIME_SHARED_START;

@@ -8,12 +8,14 @@
 #include <sys/sendfile.h>
 // Special edge-call handler for syscall proxying
 void
-incoming_syscall(struct edge_call* edge_call) {
+incoming_syscall(struct edge_call* edge_call, size_t _shared_len) {
   struct edge_syscall* syscall_info;
+
+  uintptr_t _shared_start = (uintptr_t)edge_call;
 
   size_t args_size;
 
-  if (edge_call_args_ptr(edge_call, (uintptr_t*)&syscall_info, &args_size) != 0)
+  if (edge_call_args_ptr(edge_call, (uintptr_t*)&syscall_info, &args_size, _shared_start, _shared_len) != 0)
     goto syscall_error;
 
   // NOTE: Right now we assume that the args data is safe, even though
@@ -194,14 +196,14 @@ incoming_syscall(struct edge_call* edge_call) {
   }
 
   /* Setup return value */
-  void* ret_data_ptr      = (void*)edge_call_data_ptr();
+  void* ret_data_ptr      = (void*)edge_call_data_ptr(_shared_start, _shared_len);
   if (is_str_ret) {
     *(char**) ret_data_ptr = retbuf; // TODO: check ptr stuff
-    if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t)) != 0)
+    if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t), _shared_start, _shared_len) != 0)
       goto syscall_error;
   } else {
     *(int64_t*)ret_data_ptr = ret;
-    if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t)) != 0)
+    if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t), _shared_start, _shared_len) != 0)
       goto syscall_error;
   }
 

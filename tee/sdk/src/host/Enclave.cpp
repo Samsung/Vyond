@@ -247,7 +247,7 @@ Enclave::run(uintptr_t* retval) {
   while (ret == Error::EdgeCallHost || ret == Error::EnclaveInterrupted) {
     /* enclave is stopped in the middle. */
     if (ret == Error::EdgeCallHost && oFuncDispatch != NULL) {
-      oFuncDispatch(getSharedBuffer());
+      oFuncDispatch(getSharedBuffer(), getSharedBufferSize());
     }
     ret = pDevice->resume(retval);
   }

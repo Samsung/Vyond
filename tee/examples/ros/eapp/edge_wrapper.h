@@ -11,5 +11,5 @@ void edge_init();
 unsigned long ocall_print_buffer(char *data, size_t data_len);
 void ocall_print_value(unsigned long val);
 void ocall_get_string(struct edge_data *retdata);
-unsigned long ocall_loan_shm(void *data, size_t data_len);
+unsigned long ocall_loan_shm();
 #endif /* _EDGE_WRAPPER_H_ */

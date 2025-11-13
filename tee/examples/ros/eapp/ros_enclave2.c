@@ -10,7 +10,6 @@ void EAPP_ENTRY eapp_entry()
   unsigned long rid = ocall_loan_shm();
   void *shm = map_shm(rid);
   ocall_print_value((uintptr_t)shm);
-  void *shm = map_shm(rid);
 
   // read shared memory data written by the publisher
   ocall_print_value(*(int *)shm);

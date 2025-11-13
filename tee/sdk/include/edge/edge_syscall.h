@@ -214,7 +214,7 @@ typedef struct sargs_SYS_sendfile {
 } sargs_SYS_sendfile;
 
 void
-incoming_syscall(struct edge_call* buffer);
+incoming_syscall(struct edge_call* buffer, size_t size);
 
 #ifdef __cplusplus
 }
