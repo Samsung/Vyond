@@ -224,7 +224,6 @@ int __keystone_destroy_enclave(unsigned int ueid)
 
 int keystone_resume_enclave(unsigned long data)
 {
-  keystone_err("[DRV] resume_enclave --\n");
   struct sbiret ret;
   struct keystone_ioctl_run_enclave *arg = (struct keystone_ioctl_run_enclave*) data;
   unsigned long ueid = arg->eid;
@@ -246,8 +245,6 @@ int keystone_resume_enclave(unsigned long data)
 
   arg->error = ret.error;
   arg->value = ret.value;
-  keystone_err("[DRV] resume_enclave ret.error: %xld# ret.value: %ld\n",
-               arg->error, arg->value);
 
   return 0;
 }

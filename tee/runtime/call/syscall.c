@@ -154,12 +154,11 @@ void init_edge_internals(){
   edge_call_init_internals(shared_buffer, shared_buffer_size);
 }
 
-static int
-handle_map_shm(rid_t rid, uintptr_t* ret_vaddr) {
+uintptr_t shm_va_ptr = RUNTIME_SHARED_START;
+
+static int handle_map_shm(rid_t rid, uintptr_t* ret_vaddr) {
   uintptr_t paddr, size;
-  uintptr_t ret = SBI_CALL_1(
-      SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE, SBI_SM_MAP_SHM_REGION,
-      (uintptr_t)rid);
+  uintptr_t ret = SBI_CALL_1(SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE, SBI_SM_MAP_SHM_REGION, (uintptr_t)rid);
   if (ret) return 1;
   paddr = read_reg(a2);
   size  = read_reg(a3);
@@ -167,15 +166,12 @@ handle_map_shm(rid_t rid, uintptr_t* ret_vaddr) {
   uintptr_t va = shm_va_ptr;
   *ret_vaddr   = va;
   while (va < shm_va_ptr + size) {
-    if (!map_page(vpn(va), ppn(paddr), PTE_W | PTE_R | PTE_D)) {
+    if (!map_page(vpn(va), ppn(paddr), PAGE_MODE_USER_DATA)) {
       return -1;
     }
     va += RISCV_PAGE_SIZE;
     paddr += RISCV_PAGE_SIZE;
   }
-  printf(
-      "[RUNTIME] map_shm rid: %d paddr: %#x size: %d va: %#x", rid, paddr, size,
-      va);
 
   return 0;  // TODO: better error handling
 }

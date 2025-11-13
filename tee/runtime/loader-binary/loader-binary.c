@@ -45,7 +45,6 @@ int load_runtime(uintptr_t dummy,
                 uintptr_t free_base, uintptr_t untrusted_ptr, 
                 uintptr_t untrusted_size) {
   int ret = 0;
-  printf("[RUNTIME] danguria load_runtime dram_base: %#lx\n", dram_base);
 
   root_page_table = root_page_table_storage;
 
