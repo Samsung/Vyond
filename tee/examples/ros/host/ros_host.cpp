@@ -23,20 +23,14 @@ void create_enclaves(char *publisher_path, char *subscriber_path, char *eyrie_pa
   params.setUntrustedSize(256 * 1024);
 
   // PUBLISHER
-  printf("[HOST] Initializing publisher with %s, %s, %s...\n", publisher_path, eyrie_path, loader_path);
   enc_publisher.init(publisher_path, eyrie_path, loader_path, params);
-
-  enc_publisher.registerOcallDispatch(incoming_call_dispatch);
-  edge_call_init_internals(
-      (uintptr_t)enc_publisher.getSharedBuffer(), enc_publisher.getSharedBufferSize());
+  printf("[HOST] Initialized publisher with %s, %s, %s shared buffer starts at %#lx\n",
+         publisher_path, eyrie_path, loader_path, (uintptr_t)enc_publisher.getSharedBuffer());
 
   // SUBSCRIBER
-  // printf("[HOST] Initializing subscriber with %s, %s, %s...\n", subscriber_path, eyrie_path, loader_path);
-  // enc_subscriber.init(subscriber_path, eyrie_path, loader_path, params);
-
-  // enc_subscriber.registerOcallDispatch(incoming_call_dispatch);
-  // edge_call_init_internals(
-  //     (uintptr_t)enc_subscriber.getSharedBuffer(), enc_subscriber.getSharedBufferSize());
+  enc_subscriber.init(subscriber_path, eyrie_path, loader_path, params);
+  printf("[HOST] Initialized subscriber with %s, %s, %s shared buffer starts at %#lx\n",
+         subscriber_path, eyrie_path, loader_path, (uintptr_t)enc_subscriber.getSharedBuffer());
 }
 
 void init_shm()
@@ -45,7 +39,7 @@ void init_shm()
   rid = shm.createShm(0x1000);
   shm.changeShm(rid, 7);
   shm.shareShm(rid, enc_publisher.getEID(), 7);
-  // shm.shareShm(rid, enc_subscriber.getEID(), 7);
+  shm.shareShm(rid, enc_subscriber.getEID(), 7);
   printf("[HOST] init_shm created rid %d\n", rid);
 }
 
@@ -92,30 +86,6 @@ unsigned long loan_shm(loan_t *loan)
   return rid;
 }
 
-// int main(int argc, char **argv)
-//{
-//   printf("[HOST] Entering main function of host...\n");
-//   Enclave enclave;
-//   Params params;
-//   params.setFreeMemSize(256 * 1024);
-//   params.setUntrustedSize(256 * 1024);
-//
-//   enclave.init(argv[1], argv[3], argv[4], params);
-//   edge_init(&enclave);
-//
-//   rid = shm.createShm(0x1000);
-//   shm.changeShm(rid, 7);
-//   shm.shareShm(rid, enclave.getEID(), 7);
-//   printf("[HOST] init_shm created rid %d\n", rid);
-//
-//   uintptr_t encl_ret;
-//   enclave.run(&encl_ret);
-//
-//   printf("[HOST] Terminating host...\n");
-//
-//   return 0;
-// }
-
 int main(int argc, char **argv)
 {
   printf("[HOST] Entering main function of host...\n");
@@ -123,14 +93,16 @@ int main(int argc, char **argv)
   create_enclaves(argv[1], argv[2], argv[3], argv[4]);
   init_shm();
   edge_init(&enc_publisher);
-  // edge_init(&enc_subscriber);
 
   pthread_t thr_publisher, thr_subscriber;
   pthread_create(&thr_publisher, 0, publisher_run, (void *)argv);
-  // pthread_create(&thr_subscriber, 0, subscriber_run, (void *)argv);
-
   pthread_join(thr_publisher, NULL);
-  // pthread_join(thr_subscriber, NULL);
+
+  // FIXME: Below edge_init overwrite shared buffer set by publisher
+  // because keystone edge call does not support multi-threaded enclave.
+  edge_init(&enc_subscriber);
+  pthread_create(&thr_subscriber, 0, subscriber_run, (void *)argv);
+  pthread_join(thr_subscriber, NULL);
 
   printf("[HOST] Terminating host...\n");
 

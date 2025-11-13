@@ -4,27 +4,16 @@
 #include "app/malloc.h"
 #include "edge_wrapper.h"
 
-typedef struct Loan
-{
-  int size;
-  int perm;
-} loan_t;
-
 void EAPP_ENTRY eapp_entry()
 {
+  // get region id (rid) from the host and map to the enclave's va space.
+  unsigned long rid = ocall_loan_shm();
+  void *shm = map_shm(rid);
+  ocall_print_value((uintptr_t)shm);
+  void *shm = map_shm(rid);
 
-  // loan_t loan;
-  // loan.size = 1024;
-  // loan.perm = 7;
-  // unsigned long rid = ocall_loan_shm(&loan, sizeof(loan_t));
-  // ocall_print_value(rid);
-
-  // void *shm = map_shm(rid);
-  // ocall_print_value((uintptr_t)shm);
-  // for (int i = 0; i < 99999; i++)
-  //   ;
-
-  // ocall_print_value(*(int *)shm);
+  // read shared memory data written by the publisher
+  ocall_print_value(*(int *)shm);
 
   EAPP_RETURN(0);
 }
