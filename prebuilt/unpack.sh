@@ -35,3 +35,4 @@ fi
 if [ ! -e "rootfs.ext2" ]; then
   decompress "rootfs.ext2.gz"
 fi
+

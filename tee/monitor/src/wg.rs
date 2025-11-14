@@ -249,7 +249,7 @@ pub fn is_wg_region_valid(region_idx: usize) -> bool {
 }
 
 pub const WG_MAX_N_REGION: usize = 16;
-pub const NWORLDS: u64 = 4;
+pub const NWORLDS: u64 = 8;
 pub const TRUSTED_WID: u64 = NWORLDS - 1;
 pub const OS_WID: u64 = NWORLDS - 2;
 const INIT_VALUE: Option<Region> = None;

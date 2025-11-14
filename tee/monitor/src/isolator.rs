@@ -47,12 +47,12 @@ pub fn smm_init<'a>() -> Result<(), Error> {
     }
     #[cfg(feature = "isolator_wg")]
     {
-        csr_write_custom!(0x390, 2); // Set mlwid
+        csr_write_custom!(0x390, wg::OS_WID); // Set mlwid
 
         let flash = wg::WGChecker::new(wg::WGC_FLASH_BASE);
-        flash.set_slot_perm(flash.get_nslots() as usize, 0xff);
+        flash.set_slot_perm(flash.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
         let uart = wg::WGChecker::new(wg::WGC_UART_BASE);
-        uart.set_slot_perm(uart.get_nslots() as usize, 0xff);
+        uart.set_slot_perm(uart.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
 
         let region = wg::region_init(SMM_BASE, SMM_SIZE, 3 << (wg::TRUSTED_WID * 2), false)?;
         wg::set_wg(region)?;
@@ -62,12 +62,12 @@ pub fn smm_init<'a>() -> Result<(), Error> {
     }
     #[cfg(feature = "isolator_hybrid")]
     {
-        csr_write_custom!(0x390, 2); // Set mlwid
+        csr_write_custom!(0x390, wg::OS_WID); // Set mlwid
 
         let flash = wg::WGChecker::new(wg::WGC_FLASH_BASE);
-        flash.set_slot_perm(flash.get_nslots() as usize, 0xff);
+        flash.set_slot_perm(flash.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
         let uart = wg::WGChecker::new(wg::WGC_UART_BASE);
-        uart.set_slot_perm(uart.get_nslots() as usize, 0xff);
+        uart.set_slot_perm(uart.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
 
         let region = wg::region_init(SMM_BASE, SMM_SIZE, 3 << (wg::TRUSTED_WID * 2), false)?;
         wg::set_wg(region)?;
