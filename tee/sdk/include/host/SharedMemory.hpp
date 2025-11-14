@@ -26,14 +26,21 @@ class SharedMemory {
  public:
   SharedMemory();
   ~SharedMemory();
-  virtual rid_t createShm(size_t size);
-  virtual void* mapShm(rid_t rid);
-  virtual int unmapShm(void* va);
-  virtual int changeShm(rid_t rid, unsigned long perm);
-  virtual int shareShm(rid_t rid, int eid, unsigned long perm);
+  rid_t createShm(size_t size);
+  void* mapShm(rid_t rid);
+  int unmapShm(void* va);
+  int changeShm(rid_t rid, unsigned long perm);
+  int shareShm(rid_t rid, int eid, unsigned long perm);
+
+  rid_t getRID() { return rid; }
+  void* getVA() { return va; }
+  size_t getSize() { return size; }
 
  private:
   int fd;
+  rid_t rid;
+  size_t size;
+  void* va;
 };
 
 }  // namespace Keystone

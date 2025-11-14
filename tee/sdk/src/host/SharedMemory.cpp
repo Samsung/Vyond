@@ -20,11 +20,12 @@ SharedMemory::~SharedMemory() { close(fd); }
 rid_t
 SharedMemory::createShm(size_t size) {
   struct keystone_ioctl_create_shm create_shm;
-  create_shm.size = size;
+  this->size = create_shm.size = size;
   if (ioctl(fd, KEYSTONE_IOC_CREATE_SHM, &create_shm)) {
     return 0;
   }
 
+  rid = create_shm.rid;
   return create_shm.rid;
 }
 
@@ -34,7 +35,8 @@ SharedMemory::mapShm(rid_t rid) {
   struct keystone_ioctl_map_shm params = {.rid = rid, .size = size};
   int ret = ioctl(fd, KEYSTONE_IOC_MAP_SHM, &params);
   if (ret == -1) return NULL;
-  return mmap(NULL, params.size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+  va = mmap(NULL, params.size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+  return va;
 }
 int
 SharedMemory::unmapShm(void* va) {

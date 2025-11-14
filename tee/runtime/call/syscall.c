@@ -174,21 +174,19 @@ static int handle_map_shm(rid_t rid, uintptr_t* ret_vaddr) {
     paddr += RISCV_PAGE_SIZE;
   }
 
+  shm_va_ptr = va;
+
   return 0;  // TODO: better error handling
 }
 
 static int
-handle_unmap_shm(uintptr_t vaddr) {
-  /*
-  struct vma* vma = get_vma_by_va(vaddr);
-  if (vma == NULL || vma->type != VMA_TYPE_SHARED) return 1;
-
+handle_unmap_shm(rid_t rid, uintptr_t vaddr, size_t size) {
   uintptr_t ret = SBI_CALL_1(
-      SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE, SBI_SM_UNMAP_SHM_REGION, vma->rid);
-  if (ret) return 1;
-  unmap_pages(vma);
-  */
+      SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE, SBI_SM_UNMAP_SHM_REGION,
+      (uintptr_t)rid);
+  if (ret) return -1;
 
+  free_pages(vpn(vaddr), size / RISCV_PAGE_SIZE);
   return 0;
 }
 
@@ -260,7 +258,7 @@ void handle_syscall(struct encl_ctx* ctx)
       copy_to_user((void*)arg1, &ret_val, sizeof(ret_val));
       break;
     case (RUNTIME_SYSCALL_UNMAP_SHM):
-      ret = handle_unmap_shm(arg0);
+      ret = handle_unmap_shm((rid_t)arg0, (uintptr_t)arg2, (size_t)arg3);
       break;
 
 #ifdef USE_LINUX_SYSCALL

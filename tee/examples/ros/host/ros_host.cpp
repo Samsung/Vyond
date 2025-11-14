@@ -80,10 +80,13 @@ get_host_string()
   return longstr;
 }
 
-unsigned long loan_shm()
+shm_t loan_shm()
 {
-  printf("[HOST] loan_shm rid: %d\n", rid);
-  return rid;
+  shm_t s;
+  s.rid = shm.getRID();
+  s.size = shm.getSize();
+  printf("[HOST] loan_shm rid: %d size: %d\n", s.rid, s.size);
+  return s;
 }
 
 int main(int argc, char **argv)

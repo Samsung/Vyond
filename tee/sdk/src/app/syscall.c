@@ -44,6 +44,6 @@ map_shm(rid_t rid) {
 }
 
 int
-unmap_shm(void* addr) {
-  return SYSCALL_1(RUNTIME_SYSCALL_UNMAP_SHM, addr);
+unmap_shm(rid_t rid, void* addr, size_t size) {
+  return SYSCALL_3(RUNTIME_SYSCALL_UNMAP_SHM, rid, addr, size);
 }

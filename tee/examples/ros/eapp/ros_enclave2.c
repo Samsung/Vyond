@@ -7,12 +7,12 @@
 void EAPP_ENTRY eapp_entry()
 {
   // get region id (rid) from the host and map to the enclave's va space.
-  unsigned long rid = ocall_loan_shm();
-  void *shm = map_shm(rid);
-  ocall_print_value((uintptr_t)shm);
+  shm_t shm = ocall_loan_shm();
+  void *base = map_shm(shm.rid);
+  ocall_print_value((uintptr_t)base);
 
   // read shared memory data written by the publisher
-  ocall_print_value(*(int *)shm);
-
+  ocall_print_value(*(int *)base);
+  unmap_shm(shm.rid, base, shm.size);
   EAPP_RETURN(0);
 }

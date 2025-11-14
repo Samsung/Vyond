@@ -14,11 +14,11 @@ typedef struct packaged_str
     size_t len;
 } packaged_str_t;
 
-typedef struct Loan
+typedef struct shm
 {
-    int size;
-    int perm;
-} loan_t;
+    rid_t rid;
+    size_t size;
+} shm_t;
 
 typedef unsigned char byte;
 
@@ -34,6 +34,6 @@ void get_host_string_wrapper(void *buffer, size_t size);
 const char *get_host_string();
 
 void loan_shm_wrapper(void *buffer, size_t size);
-unsigned long loan_shm();
+shm_t loan_shm();
 
 #endif /* _EDGE_WRAPPER_H_ */

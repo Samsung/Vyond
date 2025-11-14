@@ -58,6 +58,6 @@ void*
 map_shm(rid_t rid);
 
 int
-unmap_shm(void* addr);
+unmap_shm(rid_t rid, void* addr, size_t size);
 
 #endif /* syscall.h */
