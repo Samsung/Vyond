@@ -71,6 +71,7 @@ struct keystone_ioctl_run_enclave {
 typedef uint32_t rid_t;
 struct keystone_ioctl_create_shm {
   unsigned long size;
+  uintptr_t pa;
   rid_t rid;
 };
 

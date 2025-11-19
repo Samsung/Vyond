@@ -47,3 +47,17 @@ int
 unmap_shm(rid_t rid, void* addr, size_t size) {
   return SYSCALL_3(RUNTIME_SYSCALL_UNMAP_SHM, rid, addr, size);
 }
+
+void*
+mydev_map(uintptr_t base, size_t size) {
+  uintptr_t vaddr;
+  uintptr_t* vaddr_ptr = &vaddr;
+  int ret = SYSCALL_3(RUNTIME_SYSCALL_MYDEV_MAP, base, size, vaddr_ptr);
+  if (ret) vaddr = 0;
+  return (void*)vaddr;
+}
+
+int
+mydev_unmap(void* addr, size_t size) {
+  return SYSCALL_2(RUNTIME_SYSCALL_MYDEV_UNMAP, addr, size);
+}

@@ -60,4 +60,9 @@ map_shm(rid_t rid);
 int
 unmap_shm(rid_t rid, void* addr, size_t size);
 
+void*
+mydev_map(uintptr_t base, size_t size);
+
+int
+mydev_unmap(void* addr, size_t size);
 #endif /* syscall.h */

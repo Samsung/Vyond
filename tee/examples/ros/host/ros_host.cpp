@@ -2,11 +2,13 @@
 // Copyright (c) 2018, The Regents of the University of California (Regents).
 // All Rights Reserved. See LICENSE for license details.
 //------------------------------------------------------------------------------
+#include <pthread.h>
+
 #include "edge/edge_call.h"
-#include "edge_wrapper.h"
 #include "host/keystone.h"
 #include "host/SharedMemory.hpp"
-#include <pthread.h>
+
+#include "edge_wrapper.h"
 
 using namespace Keystone;
 
@@ -84,8 +86,9 @@ shm_t loan_shm()
 {
   shm_t s;
   s.rid = shm.getRID();
+  s.pa = (uintptr_t)shm.getPA();
   s.size = shm.getSize();
-  printf("[HOST] loan_shm rid: %d size: %d\n", s.rid, s.size);
+  printf("[HOST] loan_shm rid: %d pa: %#lx size: %d\n", s.rid, s.pa, s.size);
   return s;
 }
 
@@ -101,8 +104,6 @@ int main(int argc, char **argv)
   pthread_create(&thr_publisher, 0, publisher_run, (void *)argv);
   pthread_join(thr_publisher, NULL);
 
-  // FIXME: Below edge_init overwrite shared buffer set by publisher
-  // because keystone edge call does not support multi-threaded enclave.
   edge_init(&enc_subscriber);
   pthread_create(&thr_subscriber, 0, subscriber_run, (void *)argv);
   pthread_join(thr_subscriber, NULL);

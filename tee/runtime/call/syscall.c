@@ -190,9 +190,32 @@ handle_unmap_shm(rid_t rid, uintptr_t vaddr, size_t size) {
   return 0;
 }
 
-void handle_syscall(struct encl_ctx* ctx)
-{
-  uintptr_t n = ctx->regs.a7;
+static int
+handle_mydev_map(uintptr_t paddr, size_t size, uintptr_t* ret_vaddr) {
+  uintptr_t va = shm_va_ptr;
+  *ret_vaddr   = va;
+  while (va < shm_va_ptr + size) {
+    if (!map_page(vpn(va), ppn(paddr), PAGE_MODE_USER_DATA)) {
+      return -1;
+    }
+    va += RISCV_PAGE_SIZE;
+    paddr += RISCV_PAGE_SIZE;
+  }
+
+  shm_va_ptr = va;
+
+  return 0;  // TODO: better error handling
+}
+
+static int
+handle_mydev_unmap(uintptr_t vaddr, size_t size) {
+  free_pages(vpn(vaddr), size / RISCV_PAGE_SIZE);
+  return 0;
+}
+
+void
+handle_syscall(struct encl_ctx* ctx) {
+  uintptr_t n    = ctx->regs.a7;
   uintptr_t arg0 = ctx->regs.a0;
   uintptr_t arg1 = ctx->regs.a1;
   uintptr_t arg2 = ctx->regs.a2;
@@ -259,6 +282,13 @@ void handle_syscall(struct encl_ctx* ctx)
       break;
     case (RUNTIME_SYSCALL_UNMAP_SHM):
       ret = handle_unmap_shm((rid_t)arg0, (uintptr_t)arg2, (size_t)arg3);
+      break;
+    case (RUNTIME_SYSCALL_MYDEV_MAP):
+      ret = handle_mydev_map((uintptr_t)arg0, (size_t)arg1, &ret_val);
+      copy_to_user((void*)arg2, &ret_val, sizeof(ret_val));
+      break;
+    case (RUNTIME_SYSCALL_MYDEV_UNMAP):
+      ret = handle_mydev_unmap((uintptr_t)arg0, (size_t)arg1);
       break;
 
 #ifdef USE_LINUX_SYSCALL

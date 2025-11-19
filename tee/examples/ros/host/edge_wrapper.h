@@ -17,6 +17,7 @@ typedef struct packaged_str
 typedef struct shm
 {
     rid_t rid;
+    uintptr_t pa;
     size_t size;
 } shm_t;
 

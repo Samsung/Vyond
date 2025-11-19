@@ -17,6 +17,7 @@ void edge_init()
 #define OCALL_PRINT_VALUE 2
 #define OCALL_GET_STRING 4
 #define OCALL_LOAN_SHM 8
+#define OCALL_MYDEV_CMD 16
 
 void ocall_print_value(unsigned long val)
 {
@@ -48,4 +49,11 @@ shm_t ocall_loan_shm()
     ocall(OCALL_LOAN_SHM, NULL, 0, &shm, sizeof(shm_t));
 
     return shm;
+}
+
+unsigned long ocall_mydev_cmd(int cmd)
+{
+    unsigned long status;
+    ocall(OCALL_MYDEV_CMD, &cmd, sizeof(int), &status, sizeof(unsigned long));
+    return status;
 }

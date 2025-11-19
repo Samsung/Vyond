@@ -34,6 +34,7 @@ class SharedMemory {
 
   rid_t getRID() { return rid; }
   void* getVA() { return va; }
+  void* getPA() { return pa; }
   size_t getSize() { return size; }
 
  private:
@@ -41,6 +42,7 @@ class SharedMemory {
   rid_t rid;
   size_t size;
   void* va;
+  void* pa;
 };
 
 }  // namespace Keystone

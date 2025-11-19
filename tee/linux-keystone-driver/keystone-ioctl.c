@@ -16,7 +16,20 @@
     __v;                                                  \
   })
 
+int keystone_create_enclave(struct file *filep, unsigned long arg);
+int keystone_finalize_enclave(unsigned long arg);
+int keystone_run_enclave(unsigned long data);
+int utm_init_ioctl(struct file *filp, unsigned long arg);
+int keystone_destroy_enclave(struct file *filep, unsigned long arg);
 int __keystone_destroy_enclave(unsigned int ueid);
+int keystone_resume_enclave(unsigned long data);
+int create_shm(unsigned long args);
+int map_shm(unsigned long arg);
+int unmap_shm(unsigned long arg);
+int change_shm(unsigned long arg);
+int share_shm(unsigned long arg);
+long keystone_ioctl(struct file *filep, unsigned int cmd, unsigned long arg);
+int keystone_release(struct inode *inode, struct file *file);
 
 int keystone_create_enclave(struct file *filep, unsigned long arg)
 {
@@ -266,8 +279,9 @@ int create_shm(unsigned long args)
     goto error;
   }
 
+  ioctl_args->pa = pa;
   ioctl_args->rid = ret.value;
-  keystone_info("keystone_create_shm: paddr: %#lx, size: %ld, rid: %ld\n", pa, ioctl_args->size, ioctl_args->rid);
+  keystone_info("keystone_create_shm: paddr: %#lx, size: %ld, rid: %d\n", pa, ioctl_args->size, ioctl_args->rid);
 
   return 0;
 error:

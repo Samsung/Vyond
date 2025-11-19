@@ -44,7 +44,7 @@ int epm_init(struct epm *epm, unsigned int min_pages)
   order = ilog2(min_pages - 1) + 1;
   count = 0x1 << order;
 
-  keystone_info("epm_init - min_pages: %ld order: %ld MAX_PAGE_ORDER: %ld\n", min_pages, order, MAX_PAGE_ORDER);
+  keystone_info("epm_init - min_pages: %d order: %lu MAX_PAGE_ORDER: %d\n", min_pages, order, MAX_PAGE_ORDER);
 
   /* prevent kernel from complaining about an invalid argument */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
@@ -97,8 +97,8 @@ int epm_init(struct epm *epm, unsigned int min_pages)
   epm->ptr = epm_vaddr;
 
   keystone_info("epm_vaddr : %#lx epm_paddr: %#lx (%lu pages)\n",
-                epm->root_page_table,
-                epm->pa,
+                (uintptr_t)epm->root_page_table,
+                (uintptr_t)epm->pa,
                 count);
 
   return 0;
@@ -158,32 +158,18 @@ int shm_init(struct shm *shm, size_t shared_size)
 
   int is_cma = 0;
   void *ptr = NULL;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
-  if (order < 15 /*MAX_PAGE_ORDER*/)
-  {
-#else
-  if (order < MAX_ORDER)
-  {
-#endif
-    ptr = (void *)__get_free_pages(GFP_HIGHUSER, order);
-  }
 
-#ifdef CONFIG_CMA
   /* If buddy allocator fails, we fall back to the CMA */
-  if (!ptr)
-  {
-    phys_addr_t device_phys_addr = 0;
-    // count = req_pages;
-    is_cma = 1;
-    ptr = (void *)dma_alloc_coherent(keystone_dev.this_device,
-                                     count << PAGE_SHIFT,
-                                     &device_phys_addr,
-                                     GFP_KERNEL | __GFP_DMA32);
+  phys_addr_t device_phys_addr = 0;
+  count = req_pages;
+  is_cma = 1;
+  ptr = (void *)dma_alloc_coherent(keystone_dev.this_device,
+                                   count << PAGE_SHIFT,
+                                   &device_phys_addr,
+                                   GFP_KERNEL | __GFP_DMA32);
 
-    if (!device_phys_addr)
-      ptr = NULL;
-  }
-#endif
+  if (!device_phys_addr)
+    ptr = NULL;
   if (!ptr)
   {
     keystone_err("failed to allocate %lu page(s)\n", count);
@@ -217,7 +203,7 @@ int shm_destroy(struct shm *shm)
   }
   else
   {
-    free_pages(shm->ptr, shm->order);
+    free_pages((uintptr_t)shm->ptr, shm->order);
   }
   return 0;
 }

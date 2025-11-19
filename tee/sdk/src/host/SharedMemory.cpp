@@ -25,6 +25,7 @@ SharedMemory::createShm(size_t size) {
     return 0;
   }
 
+  pa  = (void*)create_shm.pa;
   rid = create_shm.rid;
   return create_shm.rid;
 }
