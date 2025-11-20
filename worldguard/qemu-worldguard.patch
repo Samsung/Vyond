@@ -1,0 +1,4189 @@
+diff --git a/accel/tcg/cputlb.c b/accel/tcg/cputlb.c
+index 117b516..f1b07f6 100644
+--- a/accel/tcg/cputlb.c
++++ b/accel/tcg/cputlb.c
+@@ -1036,7 +1036,8 @@ static inline void tlb_set_compare(CPUTLBEntryFull *full, CPUTLBEntry *ent,
+  * critical section.
+  */
+ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
+-                       vaddr addr, CPUTLBEntryFull *full)
++                       vaddr addr, MMUAccessType access_type,
++                       CPUTLBEntryFull *full)
+ {
+     CPUTLB *tlb = &cpu->neg.tlb;
+     CPUTLBDesc *desc = &tlb->d[mmu_idx];
+@@ -1063,7 +1064,8 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
+     prot = full->prot;
+     asidx = cpu_asidx_from_attrs(cpu, full->attrs);
+     section = address_space_translate_for_iotlb(cpu, asidx, paddr_page,
+-                                                &xlat, &sz, full->attrs, &prot);
++                                                &xlat, &sz, full->attrs, &prot,
++                                                access_type);
+     assert(sz >= TARGET_PAGE_SIZE);
+ 
+     tlb_debug("vaddr=%016" VADDR_PRIx " paddr=0x" HWADDR_FMT_plx
+@@ -1169,6 +1171,7 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
+     desc->fulltlb[index] = *full;
+     full = &desc->fulltlb[index];
+     full->xlat_section = iotlb - addr_page;
++    full->section = section;
+     full->phys_addr = paddr_page;
+ 
+     /* Now calculate the new entry */
+@@ -1199,7 +1202,8 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
+ 
+ void tlb_set_page_with_attrs(CPUState *cpu, vaddr addr,
+                              hwaddr paddr, MemTxAttrs attrs, int prot,
+-                             int mmu_idx, uint64_t size)
++                             MMUAccessType access_type, int mmu_idx,
++                             uint64_t size)
+ {
+     CPUTLBEntryFull full = {
+         .phys_addr = paddr,
+@@ -1209,15 +1213,15 @@ void tlb_set_page_with_attrs(CPUState *cpu, vaddr addr,
+     };
+ 
+     assert(is_power_of_2(size));
+-    tlb_set_page_full(cpu, mmu_idx, addr, &full);
++    tlb_set_page_full(cpu, mmu_idx, addr, access_type, &full);
+ }
+ 
+ void tlb_set_page(CPUState *cpu, vaddr addr,
+-                  hwaddr paddr, int prot,
++                  hwaddr paddr, int prot, MMUAccessType access_type,
+                   int mmu_idx, uint64_t size)
+ {
+     tlb_set_page_with_attrs(cpu, addr, paddr, MEMTXATTRS_UNSPECIFIED,
+-                            prot, mmu_idx, size);
++                            prot, access_type, mmu_idx, size);
+ }
+ 
+ /*
+@@ -1248,14 +1252,14 @@ static inline void cpu_unaligned_access(CPUState *cpu, vaddr addr,
+ }
+ 
+ static MemoryRegionSection *
+-io_prepare(hwaddr *out_offset, CPUState *cpu, hwaddr xlat,
++io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
+            MemTxAttrs attrs, vaddr addr, uintptr_t retaddr)
+ {
+     MemoryRegionSection *section;
+     hwaddr mr_offset;
+ 
+-    section = iotlb_to_section(cpu, xlat, attrs);
+-    mr_offset = (xlat & TARGET_PAGE_MASK) + addr;
++    section = full->section;
++    mr_offset = (full->xlat_section & TARGET_PAGE_MASK) + addr;
+     cpu->mem_io_pc = retaddr;
+     if (!cpu->neg.can_do_io) {
+         cpu_io_recompile(cpu, retaddr);
+@@ -1571,9 +1575,7 @@ bool tlb_plugin_lookup(CPUState *cpu, vaddr addr, int mmu_idx,
+ 
+     /* We must have an iotlb entry for MMIO */
+     if (tlb_addr & TLB_MMIO) {
+-        MemoryRegionSection *section =
+-            iotlb_to_section(cpu, full->xlat_section & ~TARGET_PAGE_MASK,
+-                             full->attrs);
++        MemoryRegionSection *section = full->section;
+         data->is_io = true;
+         data->mr = section->mr;
+     } else {
+@@ -1972,7 +1974,7 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
+     tcg_debug_assert(size > 0 && size <= 8);
+ 
+     attrs = full->attrs;
+-    section = io_prepare(&mr_offset, cpu, full->xlat_section, attrs, addr, ra);
++    section = io_prepare(&mr_offset, cpu, full, attrs, addr, ra);
+     mr = section->mr;
+ 
+     BQL_LOCK_GUARD();
+@@ -1993,7 +1995,7 @@ static Int128 do_ld16_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
+     tcg_debug_assert(size > 8 && size <= 16);
+ 
+     attrs = full->attrs;
+-    section = io_prepare(&mr_offset, cpu, full->xlat_section, attrs, addr, ra);
++    section = io_prepare(&mr_offset, cpu, full, attrs, addr, ra);
+     mr = section->mr;
+ 
+     BQL_LOCK_GUARD();
+@@ -2513,7 +2515,7 @@ static uint64_t do_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
+     tcg_debug_assert(size > 0 && size <= 8);
+ 
+     attrs = full->attrs;
+-    section = io_prepare(&mr_offset, cpu, full->xlat_section, attrs, addr, ra);
++    section = io_prepare(&mr_offset, cpu, full, attrs, addr, ra);
+     mr = section->mr;
+ 
+     BQL_LOCK_GUARD();
+@@ -2533,7 +2535,7 @@ static uint64_t do_st16_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
+     tcg_debug_assert(size > 8 && size <= 16);
+ 
+     attrs = full->attrs;
+-    section = io_prepare(&mr_offset, cpu, full->xlat_section, attrs, addr, ra);
++    section = io_prepare(&mr_offset, cpu, full, attrs, addr, ra);
+     mr = section->mr;
+ 
+     BQL_LOCK_GUARD();
+diff --git a/docs/system/riscv/virt.rst b/docs/system/riscv/virt.rst
+index 9a06f95..2d2992d 100644
+--- a/docs/system/riscv/virt.rst
++++ b/docs/system/riscv/virt.rst
+@@ -116,6 +116,16 @@ The following machine-specific options are supported:
+   having AIA IMSIC (i.e. "aia=aplic-imsic" selected). When not specified,
+   the default number of per-HART VS-level AIA IMSIC pages is 0.
+ 
++- wg=[on|off]
++
++  When this option is "on", RISC-V WorldGuard will be enabled in the system
++  to provide the isolation of multiple worlds. RISC-V HARTS will enable WG
++  extensions to have WID in memory transaction. wgCheckers in front of RAMs
++  and device MMIO will be enabled to provide the access control of resources
++  if the transaction contains WID. When not specified, this option is assumed
++  to be "off".
++  This option is restricted to the TCG accelerator.
++
+ Running Linux kernel
+ --------------------
+ 
+diff --git a/hw/misc/Kconfig b/hw/misc/Kconfig
+index 1e08785..e7690a6 100644
+--- a/hw/misc/Kconfig
++++ b/hw/misc/Kconfig
+@@ -213,4 +213,11 @@ config IOSB
+ config XLNX_VERSAL_TRNG
+     bool
+ 
++config RISCV_WORLDGUARD
++    bool
++
++config MY_DEVICE
++    bool
++config MYDEV_DMA
++    bool
+ source macio/Kconfig
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index 2ca8717..843d742 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -34,6 +34,9 @@ system_ss.add(when: 'CONFIG_SIFIVE_E_PRCI', if_true: files('sifive_e_prci.c'))
+ system_ss.add(when: 'CONFIG_SIFIVE_E_AON', if_true: files('sifive_e_aon.c'))
+ system_ss.add(when: 'CONFIG_SIFIVE_U_OTP', if_true: files('sifive_u_otp.c'))
+ system_ss.add(when: 'CONFIG_SIFIVE_U_PRCI', if_true: files('sifive_u_prci.c'))
++system_ss.add(when: 'CONFIG_MY_DEVICE', if_true: files('my_device.c'))
++system_ss.add(when: 'CONFIG_MYDEV_DMA', if_true: files('mydev_dma.c'))
++specific_ss.add(when: 'CONFIG_RISCV_WORLDGUARD', if_true: files('riscv_worldguard.c', 'riscv_wgchecker.c'))
+ 
+ subdir('macio')
+ 
+diff --git a/hw/misc/my_device.c b/hw/misc/my_device.c
+new file mode 100644
+index 0000000..7e7208c
+--- /dev/null
++++ b/hw/misc/my_device.c
+@@ -0,0 +1,144 @@
++#include "qemu/osdep.h"
++#include "hw/sysbus.h"
++#include "qemu/log.h"
++#include "qemu/module.h"
++#include "hw/irq.h"
++#include "hw/qdev-properties.h"
++#include "qapi/error.h"
++#include "qom/object.h"
++
++#define TYPE_MY_DEVICE "my-device"
++#define MY_DEVICE(obj) OBJECT_CHECK(MyDeviceState, (obj), TYPE_MY_DEVICE)
++
++// Register Map
++#define REG_ID 0x0
++#define CHIP_ID 0xf001
++
++#define REG_INIT 0x4
++#define CHIP_EN BIT(0)
++
++#define REG_CMD 0x8
++
++#define REG_INT_STATUS 0xc
++#define INT_ENABLED BIT(0)
++#define INT_BUFFER_DEQ BIT(1)
++
++typedef struct
++{
++    SysBusDevice parent_obj;
++    MemoryRegion iomem;
++    uint32_t id;
++    uint32_t init;
++    uint32_t cmd;
++    uint32_t status;
++    qemu_irq irq;
++} MyDeviceState;
++
++static void my_device_set_irq(MyDeviceState *s, int irq)
++{
++    s->status = irq;
++    qemu_set_irq(s->irq, 1);
++}
++
++static void my_device_clr_irq(MyDeviceState *s)
++{
++    qemu_set_irq(s->irq, 0);
++}
++
++static uint64_t my_device_read(void *opaque, hwaddr offset, unsigned size)
++{
++    printf("device read offset: %#lx size: %#x\n", offset, size);
++    MyDeviceState *s = (MyDeviceState *)opaque;
++    bool is_enabled = s->init & CHIP_EN;
++
++    if (!is_enabled)
++    {
++        fprintf(stderr, "Device is disabled\n");
++        return 0;
++    }
++
++    switch (offset)
++    {
++    case REG_ID:
++        return s->id;
++    case REG_INIT:
++        return s->init;
++    case REG_CMD:
++        return s->cmd;
++    case REG_INT_STATUS:
++        my_device_clr_irq(s);
++        return s->status;
++    default:
++        break;
++    }
++
++    return 0;
++}
++
++static void my_device_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
++{
++    printf("device write offset: %#lx size: %#x value: %ld\n", offset, size, value);
++    MyDeviceState *s = (MyDeviceState *)opaque;
++
++    switch (offset)
++    {
++    case REG_INIT:
++        s->init = (int)value;
++        if (value)
++            my_device_set_irq(s, INT_ENABLED);
++        break;
++    case REG_CMD:
++        s->cmd = (int)value;
++        my_device_set_irq(s, INT_BUFFER_DEQ);
++        break;
++    default:
++        break;
++    }
++}
++
++static const MemoryRegionOps my_device_ops = {
++    .read = my_device_read,
++    .write = my_device_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++};
++
++static void my_device_realize(DeviceState *d, Error **errp)
++{
++    MyDeviceState *s = MY_DEVICE(d);
++    SysBusDevice *sbd = SYS_BUS_DEVICE(d);
++
++    memory_region_init_io(&s->iomem, OBJECT(s), &my_device_ops, s, TYPE_MY_DEVICE, 0x1000);
++    sysbus_init_mmio(sbd, &s->iomem);
++    sysbus_init_irq(sbd, &s->irq);
++
++    sysbus_mmio_map(SYS_BUS_DEVICE(d), 0, 0x06003000);
++
++    s->id = CHIP_ID;
++    s->init = 0;
++
++    // mydevice_add_fdt_node(SYS_BUS_DEVICE(d));
++
++    qemu_log("mydevice: realized and mapped at 0x%012" PRIx64 " size 0x%x\n",
++             (uint64_t)0x06003000,
++             0x1000);
++}
++
++static void my_device_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    dc->realize = my_device_realize;
++}
++
++static const TypeInfo my_device_info = {
++    .name = TYPE_MY_DEVICE,
++    .parent = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(MyDeviceState),
++    .class_init = my_device_class_init,
++};
++
++static void my_device_register_types(void)
++{
++    type_register_static(&my_device_info);
++}
++
++type_init(my_device_register_types)
+diff --git a/hw/misc/mydev_dma.c b/hw/misc/mydev_dma.c
+new file mode 100644
+index 0000000..2c483be
+--- /dev/null
++++ b/hw/misc/mydev_dma.c
+@@ -0,0 +1,269 @@
++/* 
++ * Simple sysbus device that performs DMA to/from guest memory using
++ * cpu_physical_memory_read/write and raises an IRQ when complete.
++ */
++
++#include "qemu/osdep.h"
++#include "hw/sysbus.h"
++#include "qapi/error.h"
++#include "qemu/log.h"
++#include "hw/hw.h"
++#include "exec/memory.h"       /* cpu_physical_memory_read/write */
++#include "qemu/module.h"
++#include "qemu/typedefs.h"
++#include "hw/irq.h"
++#include "hw/registerfields.h"
++#include "hw/qdev-properties.h"
++#include "qom/object.h"
++
++
++//-----------------------------------------------------------------------
++// OFFSET | SIZE | R/W |     NAME     | Description |
++//-----------------------------------------------------------------------
++//  0x00  | 8bit | WO  | CMD          | 1: device to dma
++//                                    | 2: dma to device
++//                                    | raise an interrupt after competion
++//-----------------------------------------------------------------------
++//  0x08  | 8bit | RW  | Addr low32   | lower 32-bit of dma address
++//-----------------------------------------------------------------------
++//  0x0c  | 8bit | RW  | Addr high32  | high 32-bit of dma address
++//-----------------------------------------------------------------------
++//  0x10  | 8bit | RW  | LENGTH       | Size of dma area
++//-----------------------------------------------------------------------
++//  0x18  | 8bit | RO  | Status       | 0: operation competed
++//                                      1: Wrting operation
++//                                      2: Reading operation
++//                                      3: Error
++//                                      4: Unknown CMD
++//-----------------------------------------------------------------------
++
++#define TYPE_MYDEVICE "mydev-dma"
++#define MYDEVICE(obj) OBJECT_CHECK(MyDevDMAState, (obj), TYPE_MYDEVICE)
++
++typedef struct {
++    SysBusDevice parent_obj;
++
++    /* MMIO */
++    MemoryRegion iomem;
++    uint8_t *host_buf;        /* device internal host buffer */
++    size_t host_buf_size;
++
++    /* simple registers */
++    hwaddr dma_gpa;           /* guest physical address (destination/source) */
++    uint32_t dma_len;
++    uint32_t cmd;
++    uint32_t status;
++
++    qemu_irq irq;             /* irq line to guest */
++
++    /* convenience */
++    SysBusDevice *sbd;
++} MyDevDMAState;
++
++static void mydev_set_irq(MyDevDMAState *s)
++{
++    /* assert IRQ for a short time (edge-like) */
++    qemu_set_irq(s->irq, 1);
++}
++
++static void mydev_clr_irq(MyDevDMAState *s)
++{
++    /* assert IRQ for a short time (edge-like) */
++    qemu_set_irq(s->irq, 0);
++}
++
++
++static uint64_t mydev_read(void *opaque, hwaddr offset, unsigned size)
++{
++    MyDevDMAState *s = opaque;
++    uint64_t val = 0;
++
++    switch (offset) {
++    case 0x00: /* CMD (read returns 0) */ break;
++    case 0x18: /* status */
++        val = s->status;
++        mydev_clr_irq(s);
++        break;
++    case 0x08: /* dma_gpa low 32 */
++        val = (uint32_t)(s->dma_gpa & 0xffffffff);
++        break;
++    case 0x0c: /* dma_gpa high 32 */
++        val = (uint32_t)((s->dma_gpa >> 32) & 0xffffffff);
++        break;
++    case 0x10: /* dma_len */
++        val = s->dma_len;
++        break;
++    default:
++        printf("[QEMU] mydev_dma: read offset %#lx size %#x val %#lx\n", offset, size, val);
++        qemu_log_mask(LOG_GUEST_ERROR, "mydev_dma: read offset %#"HWADDR_PRIx"\n", offset);
++    }
++    //printf("[QEMU] mydev_dma: read offset %#lx size %#x val %#lx\n", offset, size, val);
++    return val;
++}
++
++static void perform_dma_device_to_guest(MyDevDMAState *s)
++{
++    s->status = 1;
++    /* copy from host_buf -> guest physical memory at s->dma_gpa */
++    hwaddr gpa = s->dma_gpa;
++    size_t len = s->dma_len;
++    if (!len || len > s->host_buf_size) {
++        mydev_set_irq(s);
++        return;
++    }
++
++    /* This writes directly into guest physical memory. */
++    cpu_physical_memory_write(gpa, s->host_buf, len);
++
++    s->status = 0; /* success */
++    mydev_set_irq(s);
++}
++
++static void perform_dma_guest_to_device(MyDevDMAState *s)
++{
++    s->status = 2;
++    hwaddr gpa = s->dma_gpa;
++    size_t len = s->dma_len;
++    if (!len || len > s->host_buf_size) {
++        s->status = 3;
++        return;
++    }
++    
++
++    /* read guest physical memory into device buffer */
++    cpu_physical_memory_read(gpa, s->host_buf, len);
++    
++
++    s->status = 0;
++}
++
++static void mydev_start_command(MyDevDMAState *s, uint32_t cmd)
++{
++    /* Synchronous (blocking) DMA for simplicity — fine for testing.
++       In a real device you'd do this asynchronously. */
++    if (cmd == 1) {
++        /* device -> guest DMA */
++        perform_dma_device_to_guest(s);
++    } else if (cmd == 2) {
++        /* guest -> device DMA */
++        perform_dma_guest_to_device(s);
++    } else {
++    }
++    mydev_set_irq(s);
++}
++
++/* MMIO write */
++static void mydev_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
++{
++    printf("[QEMU] mydev_dma: write offset %#lx val %#lx\n", offset, val);
++    MyDevDMAState *s = opaque;
++
++    switch (offset) {
++    case 0x00: /* CMD */
++        s->cmd = (uint32_t)val;
++        /* start operation immediately */
++        mydev_start_command(s, s->cmd);
++        break;
++    case 0x08: /* dma_gpa low */
++        s->dma_gpa = (s->dma_gpa & ~0xffffffffULL) | (val & 0xffffffffULL);
++        break;
++    case 0x0c: /* dma_gpa high */
++        s->dma_gpa = (s->dma_gpa & 0xffffffffULL) | ((uint64_t)(val & 0xffffffffULL) << 32);
++        break;
++    case 0x10: /* dma_len */
++        s->dma_len = (uint32_t)val;
++        break;
++    default:
++        printf("[QEMU] mydev_dma: write error offset %#lx val %#lx\n", offset, val);
++        qemu_log_mask(LOG_GUEST_ERROR, "mydev_dma: write error offset %#"HWADDR_PRIx" val %#"PRIx64"\n", offset, val);
++    }
++}
++
++static const MemoryRegionOps mydev_mmio_ops = {
++    .read = mydev_read,
++    .write = mydev_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++};
++
++static void mydevice_reset(Object *obj, ResetType type)
++{
++    printf("[QEMU] mydev_dma: device reset\n");
++    MyDevDMAState *s = MYDEVICE(obj);
++    s->dma_gpa = 0;
++    s->dma_len = 0;
++    s->cmd = 0;
++    s->status = 0;
++    memset(s->host_buf, 1, s->host_buf_size);
++}
++
++
++static void mydevice_init(Object *obj)
++{
++    printf("[QEMU] mydev_dma: device init\n");
++    MyDevDMAState *s = MYDEVICE(obj);
++
++    s->host_buf_size = 4096; /* device buffer size */
++    s->host_buf = g_malloc0(s->host_buf_size);
++
++    /* fill buffer with a recognizable pattern (for device->guest DMA tests) */
++    for (unsigned i = 0; i < s->host_buf_size; ++i) {
++        s->host_buf[i] = (uint8_t)(i & 0xff);
++    }
++    
++    printf("[QEMU] mydev_dma: inititial host buf (first 16 bytes: ");
++    for (int i = 0 ; i < 16; i++) printf("%#x ", s->host_buf[i]);
++    printf(")\n");
++
++    memory_region_init_io(&s->iomem, OBJECT(s), &mydev_mmio_ops, s, "mydevice-mmio", 0x1000);
++}
++
++/* SysBus glue */
++static void mydevice_realize(DeviceState *dev, Error **errp)
++{
++    printf("[QEMU] mydev_dma: device realize\n");
++    MyDevDMAState *s = MYDEVICE(dev);
++    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
++
++    sysbus_init_mmio(sbd, &s->iomem);
++    sysbus_init_irq(sbd, &s->irq); /* single irq */
++
++    s->status = 0;
++    //device_reset_register(DEVICE(dev), mydevice_reset);
++    //mydevice_reset(s);
++}
++
++static void mydevice_uninit(Object *obj)
++{
++    printf("[QEMU] mydev_dma: device uninit\n");
++    MyDevDMAState *s = MYDEVICE(obj);
++    g_free(s->host_buf);
++}
++
++static void mydevice_class_init(ObjectClass *oc, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(oc);
++    dc->realize = mydevice_realize;
++    dc->desc = "Simple DMA-capable test device";
++    dc->vmsd = NULL;
++
++    ResettableClass *rc = RESETTABLE_CLASS(oc);
++    rc->phases.enter = mydevice_reset;
++}
++
++static const TypeInfo mydevice_info = {
++    .name = TYPE_MYDEVICE,
++    .parent = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(MyDevDMAState),
++    .instance_init = mydevice_init,
++    .class_init = mydevice_class_init,
++    .instance_finalize = mydevice_uninit,
++};
++
++static void mydevice_register_types(void)
++{
++    type_register_static(&mydevice_info);
++}
++
++type_init(mydevice_register_types)
++
++
+diff --git a/hw/misc/riscv_wgchecker.c b/hw/misc/riscv_wgchecker.c
+new file mode 100644
+index 0000000..4212203
+--- /dev/null
++++ b/hw/misc/riscv_wgchecker.c
+@@ -0,0 +1,1165 @@
++/*
++ * RISC-V WorldGuard Checker Device
++ *
++ * Copyright (c) 2022 SiFive, Inc.
++ *
++ * This provides WorldGuard Checker model.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2 or later, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along with
++ * this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "qemu/osdep.h"
++#include "qapi/error.h"
++#include "qemu/log.h"
++#include "exec/hwaddr.h"
++#include "exec/exec-all.h"
++#include "hw/irq.h"
++#include "hw/registerfields.h"
++#include "hw/sysbus.h"
++#include "hw/hw.h"
++#include "hw/qdev-properties.h"
++#include "hw/misc/riscv_worldguard.h"
++#include "target/riscv/cpu.h"
++#include "trace.h"
++
++/* Common */
++REG32(VENDOR,               0x000)
++REG32(IMPID,                0x004)
++
++/* wgChecker */
++REG32(NSLOTS,               0x008)
++REG64(ERRCAUSE,             0x010)
++    FIELD(ERRCAUSE, WID,        0,  8)
++    FIELD(ERRCAUSE, R,          8,  1)
++    FIELD(ERRCAUSE, W,          9,  1)
++    FIELD(ERRCAUSE, BE,         62, 1)
++    FIELD(ERRCAUSE, IP,         63, 1)
++
++#define ERRCAUSE_MASK   \
++    (R_ERRCAUSE_WID_MASK | \
++     R_ERRCAUSE_R_MASK   | \
++     R_ERRCAUSE_W_MASK   | \
++     R_ERRCAUSE_BE_MASK  | \
++     R_ERRCAUSE_IP_MASK)
++
++REG64(ERRADDR,              0x018)
++REG64(WGC_SLOT,             0x020)
++
++/* wgChecker slots */
++REG64(SLOT_ADDR,            0x000)
++REG64(SLOT_PERM,            0x008)
++REG32(SLOT_CFG,             0x010)
++    FIELD(SLOT_CFG, A,          0,  2)
++    FIELD(SLOT_CFG, ER,         8,  1)
++    FIELD(SLOT_CFG, EW,         9,  1)
++    FIELD(SLOT_CFG, IR,         10, 1)
++    FIELD(SLOT_CFG, IW,         11, 1)
++    FIELD(SLOT_CFG, LOCK,       31, 1)
++
++#define SLOT_SIZE               0x020
++
++#define SLOT0_CFG_MASK \
++    (R_SLOT_CFG_ER_MASK | \
++     R_SLOT_CFG_EW_MASK | \
++     R_SLOT_CFG_IR_MASK | \
++     R_SLOT_CFG_IW_MASK | \
++     R_SLOT_CFG_LOCK_MASK)
++
++#define SLOT_CFG_MASK \
++    (R_SLOT_CFG_A_MASK  | (SLOT0_CFG_MASK))
++
++#define WGC_SLOT_END(nslots) \
++    (A_WGC_SLOT + SLOT_SIZE * (nslots + 1))
++
++/* wgChecker slot is 4K alignment */
++#define WG_ALIGNED_SIZE         (1 << 12)
++#define WG_ALIGNED_MASK         MAKE_64BIT_MASK(0, 12)
++
++/* wgChecker slot address is (addr / 4). */
++#define TO_SLOT_ADDR(addr)      ((addr) >> 2)
++#define FROM_SLOT_ADDR(addr)    ((addr) << 2)
++
++/* wgChecker slot cfg.A[1:0] */
++#define A_OFF                   0
++#define A_TOR                   1
++#define A_NA4                   2
++#define A_NAPOT                 3
++
++/* wgChecker slot perm */
++#define WGC_PERM(wid, perm)     ((uint64_t)(perm) << (2 * (wid)))
++#define P_READ                  (1 << 0)
++#define P_WRITE                 (1 << 1)
++
++static IOMMUAccessFlags wgc_perm_to_iommu_flags(int wgc_perm)
++{
++    if (wgc_perm == (P_READ | P_WRITE)) {
++        return IOMMU_RW;
++    } else if (wgc_perm & P_WRITE) {
++        return IOMMU_WO;
++    } else if (wgc_perm & P_READ) {
++        return IOMMU_RO;
++    } else {
++        return IOMMU_NONE;
++    }
++}
++
++static void wgchecker_iommu_notify_all(RISCVWgCheckerState *s)
++{
++    /*
++     * Do tlb_flush() to whole address space via memory_region_notify_iommu()
++     * when wgChecker changes it's config.
++     */
++
++    IOMMUTLBEvent event = {
++        .entry = {
++            .addr_mask = -1ULL,
++        }
++    };
++
++    trace_riscv_wgc_iommu_notify_all();
++
++    for (int i=0; i<WGC_NUM_REGIONS; i++) {
++        WgCheckerRegion *region = &s->mem_regions[i];
++        uint32_t nworlds = worldguard_config->nworlds;
++
++        if (!region->downstream) {
++            continue;
++        }
++        event.entry.iova = 0;
++        event.entry.translated_addr = 0;
++        event.type = IOMMU_NOTIFIER_UNMAP;
++        event.entry.perm = IOMMU_NONE;
++
++        for (int wid=0; wid<nworlds; wid++) {
++            memory_region_notify_iommu(&region->upstream, wid, event);
++        }
++    }
++}
++
++static void decode_napot(hwaddr a, hwaddr *sa, hwaddr *ea)
++{
++    /*
++     * aaaa...aaa0   8-byte NAPOT range
++     * aaaa...aa01   16-byte NAPOT range
++     * aaaa...a011   32-byte NAPOT range
++     * ...
++     * aa01...1111   2^XLEN-byte NAPOT range
++     * a011...1111   2^(XLEN+1)-byte NAPOT range
++     * 0111...1111   2^(XLEN+2)-byte NAPOT range
++     * 1111...1111   Reserved
++     */
++
++    a = FROM_SLOT_ADDR(a) | 0x3;
++
++    if (sa) {
++        *sa = a & (a + 1);
++    }
++    if (ea) {
++        *ea = a | (a + 1);
++    }
++}
++
++typedef struct WgAccessResult WgAccessResult;
++struct WgAccessResult {
++    bool is_success;
++    bool has_bus_error;
++    bool has_interrupt;
++    uint8_t perm:2;
++};
++
++static WgAccessResult wgc_check_access(
++    RISCVWgCheckerState *s, hwaddr phys_addr, uint32_t wid, uint32_t mwid, bool is_write)
++{
++    WgCheckerSlot *slot, *prev_slot;
++    uint32_t cfg_a, prev_cfg_a;
++    uint64_t start, end;
++    int slot_id, wgc_perm = 0;
++    WgAccessResult result = { 0 };
++
++    bool is_matching = false;
++    bool slot0_be, slot0_ip;
++    bool matched_slot_be = false, matched_slot_ip = false;
++
++    for (slot_id = 0; slot_id < s->slot_count; slot_id++) {
++        slot = &s->slots[slot_id + 1];
++        cfg_a = FIELD_EX32(slot->cfg, SLOT_CFG, A);
++
++        if (cfg_a == A_TOR) {
++            prev_slot = &s->slots[slot_id];
++
++            prev_cfg_a = FIELD_EX32(prev_slot->cfg, SLOT_CFG, A);
++            if (prev_cfg_a == A_NA4) {
++                start = FROM_SLOT_ADDR(prev_slot->addr) + 4;
++            } else if (prev_cfg_a == A_NAPOT) {
++                decode_napot(prev_slot->addr, NULL, &start);
++                start += 1;
++            } else { /* A_TOR or A_OFF */
++                start = FROM_SLOT_ADDR(prev_slot->addr);
++            }
++            end = FROM_SLOT_ADDR(slot->addr);
++        } else if (cfg_a == A_NA4) {
++            start = FROM_SLOT_ADDR(slot->addr);
++            end = start + 4;
++        } else if (cfg_a == A_NAPOT) {
++            decode_napot(slot->addr, &start, &end);
++            end += 1;
++        } else {
++            /* A_OFF: not in slot range. */
++            continue;
++        }
++
++        /* wgChecker slot range is between start to (end - 1). */
++        if ((start <= phys_addr) && (phys_addr < end)) {
++            /* Match the wgC slot */
++            int perm = ((slot->perm >> (wid * 2)) & 0x3);
++
++            /* If any matching rule permits access, the access is permitted. */
++            wgc_perm |= perm;
++
++            /*
++             * If any matching rule wants to report error (IRQ or Bus Error),
++             * the denied access should report error.
++             */
++            is_matching = true;
++            if (is_write) {
++                matched_slot_be |= FIELD_EX64(slot->cfg, SLOT_CFG, EW);
++                matched_slot_ip |= FIELD_EX64(slot->cfg, SLOT_CFG, IW);
++            } else {
++                matched_slot_be |= FIELD_EX64(slot->cfg, SLOT_CFG, ER);
++                matched_slot_ip |= FIELD_EX64(slot->cfg, SLOT_CFG, IR);
++            }
++        }
++    }
++
++    /* If no matching rule, error reporting depends on the slot0's config. */
++    if (is_write) {
++        slot0_be = FIELD_EX64(s->slots[0].cfg, SLOT_CFG, EW);
++        slot0_ip = FIELD_EX64(s->slots[0].cfg, SLOT_CFG, IW);
++    } else {
++        slot0_be = FIELD_EX64(s->slots[0].cfg, SLOT_CFG, ER);
++        slot0_ip = FIELD_EX64(s->slots[0].cfg, SLOT_CFG, IR);
++    }
++
++    result.is_success = is_write ? (wgc_perm & P_WRITE) : (wgc_perm & P_READ);
++    result.perm = wgc_perm;
++    if (!result.is_success) {
++        if (is_matching) {
++            result.has_bus_error = matched_slot_be;
++            result.has_interrupt = matched_slot_ip;
++        } else {
++            result.has_bus_error = slot0_be;
++            result.has_interrupt = slot0_ip;
++        }
++    }
++
++    return result;
++}
++
++static MemTxResult riscv_wgc_handle_blocked_access(
++    WgCheckerRegion *region, hwaddr addr, uint32_t wid, uint32_t mwid, bool is_write)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(region->wgchecker);
++    bool be, ip;
++    WgAccessResult result;
++    hwaddr phys_addr;
++
++    be = FIELD_EX64(s->errcause, ERRCAUSE, BE);
++    ip = FIELD_EX64(s->errcause, ERRCAUSE, IP);
++    phys_addr = addr + region->region_offset;
++
++    /*
++     * Check if this blocked access trigger IRQ (Bus Error) or not.
++     * It depends on wgChecker slot config (cfg.IR/IW/ER/EW bits).
++     */
++    result = wgc_check_access(s, phys_addr, wid, mwid, is_write);
++
++    if (!be && !ip) {
++        /*
++         * With either of the be or ip bits is set, further violations do not
++         * update the errcause or erraddr registers. Also, new interrupts
++         * cannot be generated until the be and ip fields are cleared.
++         */
++        if (result.has_interrupt || result.has_bus_error) {
++            s->errcause = FIELD_DP64(s->errcause, ERRCAUSE, WID, wid);
++            s->errcause = FIELD_DP64(s->errcause, ERRCAUSE, R, !is_write);
++            s->errcause = FIELD_DP64(s->errcause, ERRCAUSE, W, is_write);
++            s->erraddr = TO_SLOT_ADDR(phys_addr);
++        }
++
++        if (result.has_interrupt) {
++            s->errcause = FIELD_DP64(s->errcause, ERRCAUSE, IP, 1);
++            qemu_irq_raise(s->irq);
++        }
++
++        if (result.has_bus_error) {
++            s->errcause = FIELD_DP64(s->errcause, ERRCAUSE, BE, 1);
++        }
++    }
++
++    return result.has_bus_error ? MEMTX_ERROR : MEMTX_OK;
++}
++
++/*
++ * Accesses only reach these read and write functions if the wgChecker
++ * is blocking them; non-blocked accesses go directly to the downstream
++ * memory region without passing through this code.
++ */
++static MemTxResult riscv_wgc_mem_blocked_read(void *opaque, hwaddr addr,
++                                               uint64_t *pdata,
++                                               unsigned size, MemTxAttrs attrs)
++{
++    WgCheckerRegion *region = opaque;
++    uint32_t wid = mem_attrs_to_wid(attrs);
++
++    trace_riscv_wgc_mem_blocked_read(addr, size, wid);
++
++    *pdata = 0;
++    return riscv_wgc_handle_blocked_access(region, addr, wid, attrs.mwid, false);
++}
++
++static MemTxResult riscv_wgc_mem_blocked_write(void *opaque, hwaddr addr,
++                                               uint64_t value,
++                                               unsigned size, MemTxAttrs attrs)
++{
++    WgCheckerRegion *region = opaque;
++    uint32_t wid = mem_attrs_to_wid(attrs);
++
++    trace_riscv_wgc_mem_blocked_write(addr, value, size, wid);
++
++    return riscv_wgc_handle_blocked_access(region, addr, wid, attrs.mwid, true);
++}
++
++static const MemoryRegionOps riscv_wgc_mem_blocked_ops = {
++    .read_with_attrs = riscv_wgc_mem_blocked_read,
++    .write_with_attrs = riscv_wgc_mem_blocked_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid.min_access_size = 1,
++    .valid.max_access_size = 8,
++    .impl.min_access_size = 1,
++    .impl.max_access_size = 8,
++};
++
++uint32_t g_mwid = 3;
++static IOMMUTLBEntry riscv_wgc_translate(IOMMUMemoryRegion *iommu,
++                                          hwaddr addr, IOMMUAccessFlags flags,
++                                          int iommu_idx)
++{
++    WgCheckerRegion *region = container_of(iommu, WgCheckerRegion, upstream);
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(region->wgchecker);
++    bool is_write;
++    WgAccessResult result;
++    int wgc_perm;
++    hwaddr phys_addr;
++    uint64_t region_size;
++
++    IOMMUTLBEntry ret = {
++        .iova = addr & ~WG_ALIGNED_MASK,
++        .translated_addr = addr & ~WG_ALIGNED_MASK,
++        .addr_mask = WG_ALIGNED_MASK,
++        .perm = IOMMU_RW,
++    };
++
++    /* addr shouldn't exceed region size of down/upstream. */
++    region_size = memory_region_size(region->downstream);
++    g_assert(addr < region_size);
++
++    /*
++     * Look at the wgChecker configuration for this address, and
++     * return a TLB entry directing the transaction at either
++     * downstream_as or blocked_io_as, as appropriate.
++     * For the moment, always permit accesses.
++     */
++
++    /* Use physical address instead of offset */
++    phys_addr = addr + region->region_offset;
++    is_write = (flags == IOMMU_WO);
++
++    result = wgc_check_access(s, phys_addr, iommu_idx, g_mwid, is_write);
++
++    trace_riscv_wgc_translate(phys_addr, flags,
++        iommu_idx, result.is_success ? "pass" : "block");
++
++    wgc_perm = result.perm;
++    if (!result.is_success) {
++        /* if target_as is blocked_io_as, the perm is the condition of deny access. */
++        wgc_perm ^= (P_READ | P_WRITE);
++    }
++    ret.perm = wgc_perm_to_iommu_flags(wgc_perm);
++
++    ret.target_as = result.is_success ? &region->downstream_as : &region->blocked_io_as;
++    return ret;
++}
++
++static int riscv_wgc_attrs_to_index(IOMMUMemoryRegion *iommu, MemTxAttrs attrs)
++{
++    return mem_attrs_to_wid(attrs);
++}
++
++static int riscv_wgc_num_indexes(IOMMUMemoryRegion *iommu)
++{
++    return worldguard_config->nworlds;
++}
++
++static uint64_t riscv_wgchecker_readq(void *opaque, hwaddr addr)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(opaque);
++    uint64_t val = 0;
++
++    if ((addr >= A_WGC_SLOT) && (addr < WGC_SLOT_END(s->slot_count))) {
++        /* Read from WGC slot */
++        int slot_id = (addr - A_WGC_SLOT) / SLOT_SIZE;
++        int slot_offset = (addr - A_WGC_SLOT) % SLOT_SIZE;
++
++        switch (slot_offset) {
++        case A_SLOT_ADDR:
++            val = s->slots[slot_id].addr;
++            break;
++        case A_SLOT_PERM:
++            val = s->slots[slot_id].perm;
++            break;
++        default:
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                          __func__, addr, 8);
++            break;
++        }
++
++        return val;
++    }
++
++    switch (addr) {
++    case A_ERRCAUSE:
++        val = s->errcause & ERRCAUSE_MASK;
++        break;
++    case A_ERRADDR:
++        val = s->erraddr;
++        break;
++    case A_NSLOTS:
++        val = s->slot_count;
++        break;
++    default:
++        qemu_log_mask(LOG_GUEST_ERROR,
++                      "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                      __func__, addr, 8);
++        break;
++    }
++
++    return val;
++}
++
++static uint64_t riscv_wgchecker_readl(void *opaque, hwaddr addr)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(opaque);
++    uint64_t val = 0;
++
++    if ((addr >= A_WGC_SLOT) && (addr < WGC_SLOT_END(s->slot_count))) {
++        /* Read from WGC slot */
++        int slot_id = (addr - A_WGC_SLOT) / SLOT_SIZE;
++        int slot_offset = (addr - A_WGC_SLOT) % SLOT_SIZE;
++
++        switch (slot_offset) {
++        case A_SLOT_ADDR:
++            val = extract64(s->slots[slot_id].addr, 0, 32);
++            break;
++        case A_SLOT_ADDR + 4:
++            val = extract64(s->slots[slot_id].addr, 32, 32);
++            break;
++        case A_SLOT_PERM:
++            val = extract64(s->slots[slot_id].perm, 0, 32);
++            break;
++        case A_SLOT_PERM + 4:
++            val = extract64(s->slots[slot_id].perm, 32, 32);
++            break;
++        case A_SLOT_CFG:
++            val = s->slots[slot_id].cfg & SLOT_CFG_MASK;
++            break;
++        default:
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                          __func__, addr, 4);
++            break;
++        }
++
++        return val;
++    }
++
++    switch (addr) {
++    case A_VENDOR:
++        val = 0;
++        break;
++    case A_IMPID:
++        val = 0;
++        break;
++    case A_NSLOTS:
++        val = extract64(s->slot_count, 0, 32);
++        break;
++    case A_NSLOTS + 4:
++        val = extract64(s->slot_count, 0, 32);
++        break;
++    case A_ERRCAUSE:
++        val = s->errcause & ERRCAUSE_MASK;
++        val = extract64(val, 0, 32);
++        break;
++    case A_ERRCAUSE + 4:
++        val = s->errcause & ERRCAUSE_MASK;
++        val = extract64(val, 32, 32);
++        break;
++    case A_ERRADDR:
++        val = extract64(s->erraddr, 0, 32);
++        break;
++    case A_ERRADDR + 4:
++        val = extract64(s->erraddr, 32, 32);
++        break;
++    default:
++        qemu_log_mask(LOG_GUEST_ERROR,
++                      "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                      __func__, addr, 4);
++        break;
++    }
++
++    return val;
++}
++
++static uint64_t riscv_wgchecker_read(void *opaque, hwaddr addr, unsigned size)
++{
++    uint64_t val = 0;
++
++    switch (size) {
++    case 8:
++        val = riscv_wgchecker_readq(opaque, addr);
++        break;
++    case 4:
++        val = riscv_wgchecker_readl(opaque, addr);
++        break;
++    default:
++        qemu_log_mask(LOG_GUEST_ERROR, "%s: Invalid read size %u to wgChecker\n",
++                      __func__, size);
++        return 0;
++    }
++
++    return val;
++}
++
++/*
++ * Validate the WGC slot address is between address range.
++ *
++ * Fix the slot address to the start address if it's not within the address range.
++ * We need validation when changing "slot address" or "TOR/NAPOT mode (cfg.A)"
++ */
++static void validate_slot_address(void *opaque, int slot_id)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(opaque);
++    uint64_t start = TO_SLOT_ADDR(s->addr_range_start);
++    uint64_t end = TO_SLOT_ADDR(s->addr_range_start + s->addr_range_size);
++    uint32_t cfg_a = FIELD_EX32(s->slots[slot_id].cfg, SLOT_CFG, A);
++
++    /* First and last slot address are hard-coded. */
++    if ((slot_id == 0) || (slot_id == s->slot_count)) {
++        return;
++    }
++
++    /* Check WGC slot address is between address range. */
++    if ((s->slots[slot_id].addr < start) || (s->slots[slot_id].addr >= end)) {
++        s->slots[slot_id].addr = start;
++    }
++
++    /* Check WGC slot is 4k-aligned. */
++    if (cfg_a == A_TOR) {
++        s->slots[slot_id].addr &= ~TO_SLOT_ADDR(WG_ALIGNED_MASK);
++    } else if (cfg_a == A_NAPOT) {
++        s->slots[slot_id].addr |= TO_SLOT_ADDR(WG_ALIGNED_MASK >> 1);
++    } else if (cfg_a == A_NA4) {
++        /* Forcely replace NA4 slot with 4K-aligned NAPOT slot. */
++        FIELD_DP32(s->slots[slot_id].cfg, SLOT_CFG, A, A_NAPOT);
++        s->slots[slot_id].addr |= TO_SLOT_ADDR(WG_ALIGNED_MASK >> 1);
++    }
++}
++
++static bool slots_reg_is_ro(int slot_id, int slot_offset, uint32_t nslots)
++{
++    /*
++     * Special slots:
++     *   - slot[0]:
++     *     - addr is RO
++     *     - perm is RO
++     *     - cfg.A is OFF
++     *
++     *   - slot[nslots]:
++     *     - addr is RO
++     *     - cfg.A is OFF or TOR
++     */
++    if (slot_id == 0) {
++        switch (slot_offset) {
++        case A_SLOT_ADDR:
++        case A_SLOT_ADDR + 4:
++        case A_SLOT_PERM:
++        case A_SLOT_PERM + 4:
++            return true;
++        default:
++            break;
++        }
++    } else if (slot_id == nslots) {
++        switch (slot_offset) {
++        case A_SLOT_ADDR:
++        case A_SLOT_ADDR + 4:
++            return true;
++        default:
++            break;
++        }
++    }
++
++    return false;
++}
++
++static void riscv_wgchecker_writeq(void *opaque, hwaddr addr,
++                                    uint64_t value)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(opaque);
++
++    if ((addr >= A_WGC_SLOT) && (addr < WGC_SLOT_END(s->slot_count))) {
++        /* Read from WGC slot */
++        int slot_id = (addr - A_WGC_SLOT) / SLOT_SIZE;
++        int slot_offset = (addr - A_WGC_SLOT) % SLOT_SIZE;
++        bool locked = FIELD_EX32(s->slots[slot_id].cfg, SLOT_CFG, LOCK);
++
++        if (locked) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "%s: Couldn't write access to locked wgChecker Slot: "
++                          "slot = %d, offset = %d\n", __func__, slot_id,
++                          slot_offset);
++            return;
++        }
++
++        if (slots_reg_is_ro(slot_id, slot_offset, s->slot_count)) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                          __func__, addr, 8);
++        }
++
++        switch (slot_offset) {
++        case A_SLOT_ADDR:
++            s->slots[slot_id].addr = value;
++            validate_slot_address(s, slot_id);
++            break;
++        case A_SLOT_PERM:
++            value &= wgc_slot_perm_mask;
++            s->slots[slot_id].perm = value;
++            break;
++        default:
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                          __func__, addr, 8);
++            break;
++        }
++
++        /* Flush softmmu TLB when wgChecker changes config. */
++        wgchecker_iommu_notify_all(s);
++
++        return;
++    }
++
++    switch (addr) {
++    case A_ERRCAUSE:
++        s->errcause = value & ERRCAUSE_MASK;
++        break;
++    case A_ERRADDR:
++        s->erraddr = value;
++        break;
++    default:
++        qemu_log_mask(LOG_GUEST_ERROR,
++                      "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                      __func__, addr, 8);
++        break;
++    }
++}
++
++static void riscv_wgchecker_writel(void *opaque, hwaddr addr,
++                                    uint64_t value)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(opaque);
++
++    if ((addr >= A_WGC_SLOT) && (addr < WGC_SLOT_END(s->slot_count))) {
++        /* Write to WGC slot */
++        int slot_id = (addr - A_WGC_SLOT) / SLOT_SIZE;
++        int slot_offset = (addr - A_WGC_SLOT) % SLOT_SIZE;
++        bool locked = FIELD_EX32(s->slots[slot_id].cfg, SLOT_CFG, LOCK);
++        int cfg_a, old_cfg_a;
++
++        if (locked) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "%s: Couldn't write access to locked wgChecker Slot: "
++                          "slot = %d, offset = %d\n", __func__, slot_id,
++                          slot_offset);
++            return;
++        }
++
++        if (slots_reg_is_ro(slot_id, slot_offset, s->slot_count)) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                          __func__, addr, 4);
++        }
++
++        switch (slot_offset) {
++        case A_SLOT_ADDR:
++            s->slots[slot_id].addr = deposit64(
++                s->slots[slot_id].addr, 0, 32, value);
++            validate_slot_address(s, slot_id);
++            break;
++        case A_SLOT_ADDR + 4:
++            s->slots[slot_id].addr = deposit64(
++                s->slots[slot_id].addr, 32, 32, value);
++            validate_slot_address(s, slot_id);
++            break;
++        case A_SLOT_PERM:
++            value &= wgc_slot_perm_mask;
++            s->slots[slot_id].perm = deposit64(
++                s->slots[slot_id].perm, 0, 32, value);
++            break;
++        case A_SLOT_PERM + 4:
++            value &= extract64(wgc_slot_perm_mask, 32, 32);
++            s->slots[slot_id].perm = deposit64(
++                s->slots[slot_id].perm, 32, 32, value);
++            break;
++        case A_SLOT_CFG:
++            if (slot_id == 0) {
++                value &= SLOT0_CFG_MASK;
++                s->slots[0].cfg = value;
++            } else if (slot_id == s->slot_count) {
++                old_cfg_a = FIELD_EX32(s->slots[s->slot_count].cfg, SLOT_CFG, A);
++                cfg_a = FIELD_EX32(value, SLOT_CFG, A);
++
++                value &= SLOT0_CFG_MASK;
++                if ((cfg_a == A_OFF) || (cfg_a == A_TOR)) {
++                    value |= cfg_a;
++                } else {
++                    /* slot[nslots] could only use OFF or TOR config. */
++                    value |= old_cfg_a;
++                }
++                s->slots[s->slot_count].cfg = value;
++
++                validate_slot_address(s, slot_id);
++            } else {
++                value &= SLOT_CFG_MASK;
++                s->slots[slot_id].cfg = value;
++            }
++            break;
++        default:
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                          __func__, addr, 4);
++            break;
++        }
++
++        /* Flush softmmu TLB when wgChecker changes config. */
++        wgchecker_iommu_notify_all(s);
++
++
++        return;
++    }
++
++    switch (addr) {
++    case A_ERRCAUSE:
++        value &= extract64(ERRCAUSE_MASK, 0, 32);
++        s->errcause = deposit64(s->errcause, 0, 32, value);
++        break;
++    case A_ERRCAUSE + 4:
++        value &= extract64(ERRCAUSE_MASK, 32, 32);
++        s->errcause = deposit64(s->errcause, 32, 32, value);
++        break;
++    case A_ERRADDR:
++        s->erraddr = deposit64(s->erraddr, 0, 32, value);
++        break;
++    case A_ERRADDR + 4:
++        s->erraddr = deposit64(s->erraddr, 32, 32, value);
++        break;
++    default:
++        qemu_log_mask(LOG_GUEST_ERROR,
++                      "%s: Unexpected memory access to (0x%" HWADDR_PRIX ", %u) \n",
++                      __func__, addr, 4);
++        break;
++    }
++}
++
++static void riscv_wgchecker_write(void *opaque, hwaddr addr,
++                                   uint64_t value, unsigned size)
++{
++    switch (size) {
++    case 8:
++        riscv_wgchecker_writeq(opaque, addr, value);
++        break;
++    case 4:
++        riscv_wgchecker_writel(opaque, addr, value);
++        break;
++    default:
++        qemu_log_mask(LOG_GUEST_ERROR, "%s: Invalid write size %u to wgChecker\n",
++                      __func__, size);
++        break;
++    }
++}
++
++static MemTxResult riscv_wgchecker_read_with_attrs(
++    void *opaque, hwaddr addr, uint64_t *pdata, unsigned size,
++    MemTxAttrs attrs)
++{
++    SysBusDevice *dev = SYS_BUS_DEVICE(opaque);
++
++    trace_riscv_wgchecker_mmio_read(dev->mmio[0].addr, addr, size);
++
++    *pdata = 0;
++    if (could_access_wgblocks(attrs, "wgChecker")) {
++        *pdata = riscv_wgchecker_read(opaque, addr, size);
++    }
++
++    return MEMTX_OK;
++}
++
++static MemTxResult riscv_wgchecker_write_with_attrs(
++    void *opaque, hwaddr addr, uint64_t data, unsigned size,
++    MemTxAttrs attrs)
++{
++    SysBusDevice *dev = SYS_BUS_DEVICE(opaque);
++
++    trace_riscv_wgchecker_mmio_write(dev->mmio[0].addr, addr, size, data);
++
++    if (could_access_wgblocks(attrs, "wgChecker")) {
++        riscv_wgchecker_write(opaque, addr, data, size);
++    }
++
++    return MEMTX_OK;
++}
++
++static const MemoryRegionOps riscv_wgchecker_ops = {
++    .read_with_attrs = riscv_wgchecker_read_with_attrs,
++    .write_with_attrs = riscv_wgchecker_write_with_attrs,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid = {
++        .min_access_size = 4,
++        .max_access_size = 8
++    },
++    .impl = {
++        .min_access_size = 4,
++        .max_access_size = 8
++    }
++};
++
++static void riscv_wgc_iommu_memory_region_class_init(ObjectClass *klass,
++                                                  void *data)
++{
++    IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
++
++    imrc->translate = riscv_wgc_translate;
++    imrc->attrs_to_index = riscv_wgc_attrs_to_index;
++    imrc->num_indexes = riscv_wgc_num_indexes;
++}
++
++static const TypeInfo riscv_wgc_iommu_memory_region_info = {
++    .name = TYPE_RISCV_WGC_IOMMU_MEMORY_REGION,
++    .parent = TYPE_IOMMU_MEMORY_REGION,
++    .class_init = riscv_wgc_iommu_memory_region_class_init,
++};
++
++
++#define DEFINE_REGION(N)                                                \
++    DEFINE_PROP_LINK("downstream-mr[" #N "]", RISCVWgCheckerState,     \
++                     mem_regions[N].downstream,                         \
++                     TYPE_MEMORY_REGION, MemoryRegion *),               \
++    DEFINE_PROP_UINT64("region-offset[" #N "]", RISCVWgCheckerState,   \
++                       mem_regions[N].region_offset, 0)                 \
++
++static Property riscv_wgchecker_properties[] = {
++    DEFINE_PROP_UINT32("slot-count", RISCVWgCheckerState, slot_count, 0x1),
++    DEFINE_PROP_UINT32("mmio-size", RISCVWgCheckerState, mmio_size, 0x1000),
++
++    /* Assume 1 wgChecker has 16 regions at maximum (WGC_NUM_REGIONS). */
++    DEFINE_REGION(0), DEFINE_REGION(1), DEFINE_REGION(2), DEFINE_REGION(3),
++    DEFINE_REGION(4), DEFINE_REGION(5), DEFINE_REGION(6), DEFINE_REGION(7),
++    DEFINE_REGION(8), DEFINE_REGION(9), DEFINE_REGION(10), DEFINE_REGION(11),
++    DEFINE_REGION(12), DEFINE_REGION(13), DEFINE_REGION(14), DEFINE_REGION(15),
++
++    DEFINE_PROP_UINT64("addr-range-start", RISCVWgCheckerState, addr_range_start, 0),
++    DEFINE_PROP_UINT64("addr-range-size", RISCVWgCheckerState, addr_range_size, UINT64_MAX),
++
++    /*
++     * We could only set individual wgChecker to hw-bypass mode. It is
++     * usually used in wgChecker of BootROM, since SW has no way to enable
++     * the permission of it.
++     */
++    DEFINE_PROP_BOOL("hw-bypass", RISCVWgCheckerState, hw_bypass, false),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
++static int int_log2_down(int n)
++{
++    int i = 0;
++
++    n >>= 1;
++
++    while (n) {
++        i++;
++        n >>= 1;
++    }
++
++    return i;
++}
++
++static int int_log2_up(int n)
++{
++    return int_log2_down(n - 1) + 1;
++}
++
++/*
++ * Change the address range to be NAPOT alignment.
++ *
++ * New address range should totally cover the origin range, but new range
++ * should be configured by 1 NAPOT region (slot).
++ */
++static void address_range_align_napot(RISCVWgCheckerState *s)
++{
++    uint64_t start, end, size, new_size;
++
++    start = s->addr_range_start;
++    end = s->addr_range_start + s->addr_range_size;
++    size = s->addr_range_size;
++
++    if (size == UINT64_MAX) {
++        /* Full address range. No need of NAPOT alignment. */
++        return;
++    }
++
++    /* Size is the next power-of-2 number. */
++    size = 1 << (int_log2_up(size));
++    start = QEMU_ALIGN_DOWN(start, size);
++    end = QEMU_ALIGN_UP(end, size);
++    new_size = end - start;
++
++    /*
++     * If base is not aligned to region size (new_size),
++     * double the region size and try it again.
++     */
++    while ((new_size != size) && (size != 1ULL << 63)) {
++        size *= 2;
++        start = QEMU_ALIGN_DOWN(start, size);
++        end = QEMU_ALIGN_UP(end, size);
++        new_size = end - start;
++    }
++
++    s->addr_range_start = start;
++    s->addr_range_size = size;
++}
++
++static void riscv_wgchecker_realize(DeviceState *dev, Error **errp)
++{
++    Object *obj = OBJECT(dev);
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(dev);
++    uint64_t size;
++
++    if (worldguard_config == NULL) {
++        error_setg(errp, "Couldn't find global WorldGuard configs. "
++                   "Please realize %s device at first.",
++                   TYPE_RISCV_WORLDGUARD);
++        return;
++    }
++
++    if (s->slot_count == 0) {
++        error_setg(errp, "wgChecker slot-count couldn't be zero.");
++        return;
++    }
++
++    s->slots = g_new0(WgCheckerSlot, s->slot_count + 1);
++
++    memory_region_init_io(&s->mmio, OBJECT(dev), &riscv_wgchecker_ops, s,
++                          TYPE_RISCV_WGCHECKER, s->mmio_size);
++    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->mmio);
++    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
++
++    /* Address range should be NAPOT alignment */
++    address_range_align_napot(s);
++
++    for (int i=0; i<WGC_NUM_REGIONS; i++) {
++        WgCheckerRegion *region = &s->mem_regions[i];
++
++        if (!region->downstream) {
++            continue;
++        }
++        region->wgchecker = s;
++
++        const char *upstream_name = g_strdup_printf(
++            "wgchecker-upstream-%"HWADDR_PRIx, region->region_offset);
++        const char *downstream_name = g_strdup_printf(
++            "wgchecker-downstream-%"HWADDR_PRIx, region->region_offset);
++
++        size = memory_region_size(region->downstream);
++        memory_region_init_iommu(&region->upstream, sizeof(region->upstream),
++                                 TYPE_RISCV_WGC_IOMMU_MEMORY_REGION,
++                                 obj, upstream_name, size);
++
++        /* upstream MRs are 2nd ~ (n+1)th MemoryRegion. */
++        sysbus_init_mmio(SYS_BUS_DEVICE(dev), MEMORY_REGION(&region->upstream));
++
++        /*
++         * This memory region is not exposed to users of this device as a
++         * sysbus MMIO region, but is instead used internally as something
++         * that our IOMMU translate function might direct accesses to.
++         */
++        memory_region_init_io(&region->blocked_io, obj, &riscv_wgc_mem_blocked_ops,
++                              region, "wgchecker-blocked-io", size);
++
++        address_space_init(&region->downstream_as, region->downstream,
++                           downstream_name);
++        address_space_init(&region->blocked_io_as, &region->blocked_io,
++                           "wgchecker-blocked-io");
++    }
++}
++
++static void riscv_wgchecker_unrealize(DeviceState *dev)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(dev);
++
++    g_free(s->slots);
++    if (s->num_default_slots && s->default_slots) {
++        g_free(s->default_slots);
++    }
++}
++
++static void riscv_wgchecker_reset_enter(Object *obj, ResetType type)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(obj);
++    uint64_t start = s->addr_range_start;
++    uint64_t end = s->addr_range_start + s->addr_range_size;
++    int nslots = s->slot_count;
++
++    s->errcause = 0;
++    s->erraddr = 0;
++
++    for (int i = 0; i < nslots; i++) {
++        s->slots[i].addr = TO_SLOT_ADDR(start);
++        s->slots[i].perm = 0;
++        s->slots[i].cfg = 0;
++    }
++    s->slots[nslots].addr = TO_SLOT_ADDR(end);
++    s->slots[nslots].perm = 0;
++    s->slots[nslots].cfg = 0;
++
++    if (s->num_default_slots != 0) {
++        /*
++         * Use default slots:
++         *   slot[0] is hard-coded to start address, so the default slots
++         *   start from slot[1].
++         */
++        memcpy(&s->slots[1], s->default_slots,
++               sizeof(WgCheckerSlot) * s->num_default_slots);
++    } else if ((s->hw_bypass) ||
++               ((worldguard_config != NULL) && worldguard_config->hw_bypass)) {
++        /* HW bypass mode */
++        uint32_t trustedwid = worldguard_config->trustedwid;
++
++        if (trustedwid == NO_TRUSTEDWID) {
++            trustedwid = worldguard_config->nworlds - 1;
++        }
++
++        s->slots[nslots].perm = WGC_PERM(trustedwid, P_READ | P_WRITE);
++        s->slots[nslots].perm &= wgc_slot_perm_mask;
++        s->slots[nslots].cfg = A_TOR;
++    }
++}
++
++static void riscv_wgchecker_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    device_class_set_props(dc, riscv_wgchecker_properties);
++    dc->user_creatable = true;
++    dc->realize = riscv_wgchecker_realize;
++    dc->unrealize = riscv_wgchecker_unrealize;
++    ResettableClass *rc = RESETTABLE_CLASS(klass);
++    rc->phases.enter = riscv_wgchecker_reset_enter;
++}
++
++static void riscv_wgchecker_instance_init(Object *obj)
++{
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(obj);
++
++    s->num_default_slots = 0;
++}
++
++static const TypeInfo riscv_wgchecker_info = {
++    .name          = TYPE_RISCV_WGCHECKER,
++    .parent        = TYPE_SYS_BUS_DEVICE,
++    .instance_init = riscv_wgchecker_instance_init,
++    .instance_size = sizeof(RISCVWgCheckerState),
++    .class_init    = riscv_wgchecker_class_init,
++};
++
++static void riscv_wgchecker_register_types(void)
++{
++    type_register_static(&riscv_wgchecker_info);
++    type_register_static(&riscv_wgc_iommu_memory_region_info);
++}
++
++type_init(riscv_wgchecker_register_types)
++
++/*
++ * Create WgChecker device
++ */
++DeviceState *riscv_wgchecker_create(hwaddr addr, uint32_t size,
++                                    qemu_irq irq, uint32_t slot_count,
++                                    uint64_t addr_range_start,
++                                    uint64_t addr_range_size,
++                                    uint32_t num_of_region,
++                                    MemoryRegion **downstream,
++                                    uint64_t *region_offset,
++                                    uint32_t num_default_slots,
++                                    WgCheckerSlot *default_slots)
++{
++    DeviceState *dev = qdev_new(TYPE_RISCV_WGCHECKER);
++    RISCVWgCheckerState *s = RISCV_WGCHECKER(dev);
++    char name_mr[32];
++    char name_offset[32];
++    int i;
++
++    qdev_prop_set_uint32(dev, "slot-count", slot_count);
++    qdev_prop_set_uint32(dev, "mmio-size", size);
++    qdev_prop_set_uint64(dev, "addr-range-start", addr_range_start);
++    if (addr_range_size) {
++        qdev_prop_set_uint64(dev, "addr-range-size", addr_range_size);
++    }
++
++    g_assert(num_of_region <= WGC_NUM_REGIONS);
++    for (i=0; i<num_of_region; i++) {
++        snprintf(name_mr, 32, "downstream-mr[%d]", i);
++        snprintf(name_offset, 32, "region-offset[%d]", i);
++
++        object_property_set_link(OBJECT(dev), name_mr,
++                                 OBJECT(downstream[i]), &error_fatal);
++        qdev_prop_set_uint64(dev, name_offset, region_offset[i]);
++    }
++
++    if (num_default_slots > slot_count) {
++        num_default_slots = slot_count;
++    }
++
++    s->num_default_slots = num_default_slots;
++    if (s->num_default_slots) {
++        s->default_slots = g_new0(WgCheckerSlot, s->num_default_slots);
++        memcpy(s->default_slots, default_slots,
++               sizeof(WgCheckerSlot) * s->num_default_slots);
++    } else {
++        s->default_slots = NULL;
++    }
++
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, addr);
++    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, irq);
++    return dev;
++}
++
+diff --git a/hw/misc/riscv_worldguard.c b/hw/misc/riscv_worldguard.c
+new file mode 100644
+index 0000000..8e94e56
+--- /dev/null
++++ b/hw/misc/riscv_worldguard.c
+@@ -0,0 +1,277 @@
++/*
++ * RISC-V WorldGuard Device
++ *
++ * Copyright (c) 2022 SiFive, Inc.
++ *
++ * This provides WorldGuard global config.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2 or later, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along with
++ * this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "qemu/osdep.h"
++#include "qapi/error.h"
++#include "qemu/log.h"
++#include "exec/hwaddr.h"
++#include "hw/registerfields.h"
++#include "hw/sysbus.h"
++#include "hw/hw.h"
++#include "hw/qdev-properties.h"
++#include "hw/misc/riscv_worldguard.h"
++#include "hw/core/cpu.h"
++#include "target/riscv/cpu.h"
++#include "trace.h"
++
++/*
++ * WorldGuard global config:
++ * List the global setting of WG, like num-of-worlds. It is unique in the machine.
++ * All CPUs with WG extension and wgChecker devices will use it.
++ */
++struct RISCVWorldGuardState *worldguard_config = NULL;
++
++/* perm field bitmask of wgChecker slot, it's depends on NWorld. */
++uint64_t wgc_slot_perm_mask = 0;
++
++static Property riscv_worldguard_properties[] = {
++    DEFINE_PROP_UINT32("nworlds", RISCVWorldGuardState, nworlds, 0),
++
++    /* Only Trusted WID could access wgCheckers if it is enabled. */
++    DEFINE_PROP_UINT32("trustedwid", RISCVWorldGuardState, trustedwid, NO_TRUSTEDWID),
++
++    /*
++     * WG reset value is bypass mode in HW. All WG permission checkings are
++     * pass by default, so SW could correctly run on the machine w/o any WG
++     * programming.
++     */
++    DEFINE_PROP_BOOL("hw-bypass", RISCVWorldGuardState, hw_bypass, false),
++
++    /*
++     * TrustZone compatible mode:
++     * This mode is only supported in 2 worlds system. It converts WorldGuard
++     * WID to TZ NS signal on the bus so WG could be cooperated with
++     * TZ components. In QEMU, it converts WID to 'MemTxAttrs.secure' bit used
++     * by TZ.
++     */
++    DEFINE_PROP_BOOL("tz-compat", RISCVWorldGuardState, tz_compat, false),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
++/* WID to MemTxAttrs converter */
++extern uint32_t g_mwid;
++static void wid_to_mem_attrs(MemTxAttrs *attrs, uint32_t wid, uint32_t mwid)
++{
++    g_assert(wid < worldguard_config->nworlds);
++
++    attrs->unspecified = 0;
++    attrs->mwid = mwid;
++    g_mwid = mwid;
++    if (worldguard_config->tz_compat) {
++        attrs->secure = wid;
++    } else {
++        attrs->world_id = wid;
++    }
++}
++
++/* MemTxAttrs to WID converter */
++uint32_t mem_attrs_to_wid(MemTxAttrs attrs)
++{
++    if (attrs.unspecified) {
++        if (worldguard_config->trustedwid != NO_TRUSTEDWID) {
++            return worldguard_config->trustedwid;
++        } else {
++            return worldguard_config->nworlds - 1;
++        }
++    }
++
++    if (worldguard_config->tz_compat) {
++        return attrs.secure;
++    } else {
++        return attrs.world_id;
++    }
++}
++
++static void riscv_cpu_wg_reset(CPURISCVState *env)
++{
++    CPUState *cs = env_cpu(env);
++    RISCVCPU *cpu = RISCV_CPU(cs);
++    uint32_t mlwid, slwid, mwiddeleg;
++    uint32_t trustedwid;
++
++    if (!riscv_cpu_cfg(env)->ext_smwg) {
++        return;
++    }
++
++    if (worldguard_config == NULL) {
++        /*
++         * Note: This reset is dummy now and WG CSRs will be reset again
++         * after worldguard_config is realized.
++         */
++        return;
++    }
++
++    g_mwid = trustedwid = worldguard_config->trustedwid;
++    if (trustedwid == NO_TRUSTEDWID) {
++        g_mwid = trustedwid = worldguard_config->nworlds - 1;
++    }
++
++    /* Reset mlwid, slwid, mwiddeleg CSRs */
++    if (worldguard_config->hw_bypass) {
++        /* HW bypass mode */
++        mlwid = trustedwid;
++    } else {
++        mlwid = 0;
++    }
++    slwid = 0;
++    mwiddeleg = 0;
++
++    env->mlwid = mlwid;
++    env->mwid = mlwid;
++    if (riscv_cpu_cfg(env)->ext_sswg) {
++        env->slwid = slwid;
++        env->mwiddeleg = mwiddeleg;
++    }
++
++    /* Check mwid, mwidlist config */
++    if (worldguard_config != NULL) {
++        uint32_t valid_widlist = MAKE_64BIT_MASK(0, worldguard_config->nworlds);
++
++        /* CPU use default mwid / mwidlist config if not set */
++        if (cpu->cfg.mwidlist == UINT32_MAX) {
++            /* mwidlist contains all WIDs */
++            cpu->cfg.mwidlist = valid_widlist;
++        }
++        if (cpu->cfg.mwid == UINT32_MAX) {
++            cpu->cfg.mwid = trustedwid;
++        }
++
++        /* Check if mwid/mwidlist HW config is valid in NWorld. */
++        g_assert((cpu->cfg.mwidlist & ~valid_widlist) == 0);
++        g_assert(cpu->cfg.mwid < worldguard_config->nworlds);
++    }
++}
++
++/*
++ * riscv_worldguard_apply_cpu - Enable WG extension of CPU
++ *
++ * Note: This API should be used after global WG device is created
++ * (riscv_worldguard_realize()).
++ */
++void riscv_worldguard_apply_cpu(uint32_t hartid)
++{
++    /* WG global config should exist */
++    g_assert(worldguard_config);
++
++    CPUState *cpu = qemu_get_cpu(hartid);
++    RISCVCPU *rcpu = RISCV_CPU(cpu);
++    CPURISCVState *env = cpu ? cpu_env(cpu) : NULL;
++
++    rcpu->cfg.ext_smwg = true;
++    if (riscv_has_ext(env, RVS) && riscv_has_ext(env, RVU)) {
++        rcpu->cfg.ext_sswg = true;
++    }
++
++    /* Set machine specific WorldGuard callback */
++    env->wg_reset = riscv_cpu_wg_reset;
++    env->wid_to_mem_attrs = wid_to_mem_attrs;
++
++    /* Reset WG CSRs in CPU */
++    env->wg_reset(env);
++}
++
++bool could_access_wgblocks(MemTxAttrs attrs, const char *wgblock)
++{
++    uint32_t wid = mem_attrs_to_wid(attrs);
++    uint32_t trustedwid = worldguard_config->trustedwid;
++
++    if ((trustedwid == NO_TRUSTEDWID) || (wid == trustedwid)) {
++        return true;
++    } else {
++        /*
++         * Only Trusted WID could access WG blocks if having it.
++         * Access them from other WIDs will get failed.
++         */
++        qemu_log_mask(LOG_GUEST_ERROR,
++                      "%s: Invalid access to %s from non-trusted WID %d\n",
++                      __func__, wgblock, wid);
++
++        return false;
++    }
++}
++
++static void riscv_worldguard_realize(DeviceState *dev, Error **errp)
++{
++    RISCVWorldGuardState *s = RISCV_WORLDGUARD(dev);
++
++    if (worldguard_config != NULL) {
++        error_setg(errp, "Couldn't realize multiple global WorldGuard configs.");
++        return;
++    }
++
++    if ((s->nworlds) & (s->nworlds - 1)) {
++        error_setg(errp, "Current implementation only support power-of-2 NWorld.");
++        return;
++    }
++
++    if ((s->trustedwid != NO_TRUSTEDWID) && (s->trustedwid >= s->nworlds)) {
++        error_setg(errp, "Trusted WID must be less than the number of world.");
++        return;
++    }
++
++    if ((s->nworlds != 2) && (s->tz_compat)) {
++        error_setg(errp, "Only 2 worlds system could use TrustZone compatible mode.");
++        return;
++    }
++
++    /* Register WG global config */
++    worldguard_config = s;
++
++    /* Initialize global data for wgChecker */
++    wgc_slot_perm_mask = MAKE_64BIT_MASK(0, 2 * worldguard_config->nworlds);
++}
++
++static void riscv_worldguard_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    device_class_set_props(dc, riscv_worldguard_properties);
++    dc->user_creatable = true;
++    dc->realize = riscv_worldguard_realize;
++}
++
++static const TypeInfo riscv_worldguard_info = {
++    .name          = TYPE_RISCV_WORLDGUARD,
++    .parent        = TYPE_DEVICE,
++    .instance_size = sizeof(RISCVWorldGuardState),
++    .class_init    = riscv_worldguard_class_init,
++};
++
++/*
++ * Create WorldGuard global config
++ */
++DeviceState *riscv_worldguard_create(uint32_t nworlds, uint32_t trustedwid,
++                                     bool hw_bypass, bool tz_compat)
++{
++    DeviceState *dev = qdev_new(TYPE_RISCV_WORLDGUARD);
++    qdev_prop_set_uint32(dev, "nworlds", nworlds);
++    qdev_prop_set_uint32(dev, "trustedwid", trustedwid);
++    qdev_prop_set_bit(dev, "hw-bypass", hw_bypass);
++    qdev_prop_set_bit(dev, "tz-compat", tz_compat);
++    qdev_realize(DEVICE(dev), NULL, &error_fatal);
++    return dev;
++}
++
++static void riscv_worldguard_register_types(void)
++{
++    type_register_static(&riscv_worldguard_info);
++}
++
++type_init(riscv_worldguard_register_types)
+diff --git a/hw/misc/trace-events b/hw/misc/trace-events
+index 1be0717..ca73880 100644
+--- a/hw/misc/trace-events
++++ b/hw/misc/trace-events
+@@ -356,6 +356,15 @@ djmemc_write(int reg, uint64_t value, unsigned int size) "reg=0x%x value=0x%"PRI
+ iosb_read(int reg, uint64_t value, unsigned int size) "reg=0x%x value=0x%"PRIx64" size=%u"
+ iosb_write(int reg, uint64_t value, unsigned int size) "reg=0x%x value=0x%"PRIx64" size=%u"
+ 
++# riscv_worldguard.c
++riscv_wgchecker_mmio_read(uint64_t base, uint64_t offset, unsigned int size) "base = 0x%"PRIx64", offset = 0x%"PRIx64", size = 0x%x"
++riscv_wgchecker_mmio_write(uint64_t base, uint64_t offset, unsigned int size, uint64_t val) "base = 0x%"PRIx64", offset = 0x%"PRIx64", size = 0x%x, val = 0x%"PRIx64
++
++riscv_wgc_mem_blocked_read(uint64_t addr, unsigned size, uint32_t wid) "wgChecker blocked read: offset 0x%" PRIx64 " size %u wid %" PRIu32
++riscv_wgc_mem_blocked_write(uint64_t addr, uint64_t data, unsigned size, uint32_t wid) "wgChecker blocked write: offset 0x%" PRIx64 " data 0x%" PRIx64 " size %u wid %" PRIu32
++riscv_wgc_translate(uint64_t addr, int flags, int wid, const char *res) "wgChecker translate: addr 0x%016" PRIx64 " flags 0x%x wid %d: %s"
++riscv_wgc_iommu_notify_all(void) "wgChecker iommu: notifying UNMAP for all"
++
+ # aspeed_sli.c
+ aspeed_sli_write(uint64_t offset, unsigned int size, uint32_t data) "To 0x%" PRIx64 " of size %u: 0x%" PRIx32
+ aspeed_sli_read(uint64_t offset, unsigned int size, uint32_t data) "To 0x%" PRIx64 " of size %u: 0x%" PRIx32
+diff --git a/hw/riscv/Kconfig b/hw/riscv/Kconfig
+index a2030e3..af1a680 100644
+--- a/hw/riscv/Kconfig
++++ b/hw/riscv/Kconfig
+@@ -56,6 +56,9 @@ config RISCV_VIRT
+     select PLATFORM_BUS
+     select ACPI
+     select ACPI_PCI
++    select RISCV_WORLDGUARD
++    select MY_DEVICE
++    select MYDEV_DMA
+ 
+ config SHAKTI_C
+     bool
+diff --git a/hw/riscv/boot.c b/hw/riscv/boot.c
+index 47281ca..c2ea782 100644
+--- a/hw/riscv/boot.c
++++ b/hw/riscv/boot.c
+@@ -26,6 +26,7 @@
+ #include "hw/loader.h"
+ #include "hw/riscv/boot.h"
+ #include "hw/riscv/boot_opensbi.h"
++#include "hw/riscv/virt.h"
+ #include "elf.h"
+ #include "sysemu/device_tree.h"
+ #include "sysemu/qtest.h"
+@@ -388,50 +389,75 @@ void riscv_setup_rom_reset_vec(MachineState *machine, RISCVHartArrayState *harts
+     int i;
+     uint32_t start_addr_hi32 = 0x00000000;
+     uint32_t fdt_load_addr_hi32 = 0x00000000;
++    RISCVVirtState *rvs = RISCV_VIRT_MACHINE(machine);
+ 
+-    if (!riscv_is_32bit(harts)) {
+-        start_addr_hi32 = start_addr >> 32;
+-        fdt_load_addr_hi32 = fdt_load_addr >> 32;
+-    }
+-    /* reset vector */
+-    uint32_t reset_vec[10] = {
+-        0x00000297,                  /* 1:  auipc  t0, %pcrel_hi(fw_dyn) */
+-        0x02828613,                  /*     addi   a2, t0, %pcrel_lo(1b) */
+-        0xf1402573,                  /*     csrr   a0, mhartid  */
+-        0,
+-        0,
+-        0x00028067,                  /*     jr     t0 */
+-        start_addr,                  /* start: .dword */
+-        start_addr_hi32,
+-        fdt_load_addr,               /* fdt_laddr: .dword */
+-        fdt_load_addr_hi32,
+-                                     /* fw_dyn: */
+-    };
+-    if (riscv_is_32bit(harts)) {
+-        reset_vec[3] = 0x0202a583;   /*     lw     a1, 32(t0) */
+-        reset_vec[4] = 0x0182a283;   /*     lw     t0, 24(t0) */
++    if (rvs->rom) {
++        uint8_t *rom = g_malloc(rom_size);
++        if (!rom) {
++            error_report("could not allocate rom buffer");
++            exit(1);
++        }
++
++        size_t bl_size = load_image_size(rvs->rom, rom, rom_size);
++        if (bl_size == -1) {
++            error_report("could not get rom size");
++            exit(1);
++        }
++
++        rom_add_blob_fixed_as("mrom.reset", rom, bl_size,
++                              rom_base, &address_space_memory);
++        g_free(rom);
++
++        /* we also need the fdt */
++        if (fdt_pack(machine->fdt) ||
++            fdt_totalsize(machine->fdt) > rom_size - bl_size) {
++            error_report("not enough space to store device tree");
++            exit(1);
++        }
++
++        // word-aligned fdt location
++        size_t fdt_loc = rom_base + bl_size;
++        fdt_loc = ((fdt_loc + 0x4 - 1) & ~(0x4 - 1));
++        rom_add_blob_fixed_as("mrom.fdt", machine->fdt, fdt_totalsize(machine->fdt),
++                              fdt_loc, &address_space_memory);
+     } else {
+-        reset_vec[3] = 0x0202b583;   /*     ld     a1, 32(t0) */
+-        reset_vec[4] = 0x0182b283;   /*     ld     t0, 24(t0) */
+-    }
++        if (!riscv_is_32bit(harts)) {
++            start_addr_hi32 = start_addr >> 32;
++            fdt_load_addr_hi32 = fdt_load_addr >> 32;
++        }
++        /* reset vector */
++        uint32_t reset_vec[10] = {
++            0x00000297,                  /* 1:  auipc  t0, %pcrel_hi(fw_dyn) */
++            0x02828613,                  /*     addi   a2, t0, %pcrel_lo(1b) */
++            0xf1402573,                  /*     csrr   a0, mhartid  */
++            0,
++            0,
++            0x00028067,                  /*     jr     t0 */
++            start_addr,                  /* start: .dword */
++            start_addr_hi32,
++            fdt_load_addr,               /* fdt_laddr: .dword */
++            fdt_load_addr_hi32,
++            /* fw_dyn: */
++        };
++        if (riscv_is_32bit(harts)) {
++            reset_vec[3] = 0x0202a583;   /*     lw     a1, 32(t0) */
++            reset_vec[4] = 0x0182a283;   /*     lw     t0, 24(t0) */
++        } else {
++            reset_vec[3] = 0x0202b583;   /*     ld     a1, 32(t0) */
++            reset_vec[4] = 0x0182b283;   /*     ld     t0, 24(t0) */
++        }
+ 
+-    if (!harts->harts[0].cfg.ext_zicsr) {
+-        /*
+-         * The Zicsr extension has been disabled, so let's ensure we don't
+-         * run the CSR instruction. Let's fill the address with a non
+-         * compressed nop.
+-         */
+-        reset_vec[2] = 0x00000013;   /*     addi   x0, x0, 0 */
+-    }
++        /* copy in the reset vector in little_endian byte order */
++        for (i = 0; i < ARRAY_SIZE(reset_vec); i++) {
++            reset_vec[i] = cpu_to_le32(reset_vec[i]);
++        }
+ 
+-    /* copy in the reset vector in little_endian byte order */
+-    for (i = 0; i < ARRAY_SIZE(reset_vec); i++) {
+-        reset_vec[i] = cpu_to_le32(reset_vec[i]);
++        rom_add_blob_fixed_as("mrom.reset", reset_vec, sizeof(reset_vec),
++                              rom_base, &address_space_memory);
++        riscv_rom_copy_firmware_info(machine, rom_base, rom_size, sizeof(reset_vec),
++                                     kernel_entry);
+     }
+-    rom_add_blob_fixed_as("mrom.reset", reset_vec, sizeof(reset_vec),
+-                          rom_base, &address_space_memory);
+-    riscv_rom_copy_firmware_info(machine, rom_base, rom_size, sizeof(reset_vec),
+-                                 kernel_entry);
++
+ }
+ 
+ void riscv_setup_direct_kernel(hwaddr kernel_addr, hwaddr fdt_addr)
+diff --git a/hw/riscv/virt.c b/hw/riscv/virt.c
+index cef41c1..f0cbb56 100644
+--- a/hw/riscv/virt.c
++++ b/hw/riscv/virt.c
+@@ -55,6 +55,7 @@
+ #include "hw/acpi/aml-build.h"
+ #include "qapi/qapi-visit-common.h"
+ #include "hw/virtio/virtio-iommu.h"
++#include "hw/misc/riscv_worldguard.h"
+ 
+ /* KVM AIA only supports APLIC MSI. APLIC Wired is always emulated by QEMU. */
+ static bool virt_use_kvm_aia(RISCVVirtState *s)
+@@ -69,13 +70,19 @@ static bool virt_aclint_allowed(void)
+ 
+ static const MemMapEntry virt_memmap[] = {
+     [VIRT_DEBUG] =        {        0x0,         0x100 },
+-    [VIRT_MROM] =         {     0x1000,        0xf000 },
++    [VIRT_MROM] =         {     0x1000,        0x40000 },
+     [VIRT_TEST] =         {   0x100000,        0x1000 },
+     [VIRT_RTC] =          {   0x101000,        0x1000 },
+     [VIRT_CLINT] =        {  0x2000000,       0x10000 },
+     [VIRT_ACLINT_SSWI] =  {  0x2F00000,        0x4000 },
+     [VIRT_PCIE_PIO] =     {  0x3000000,       0x10000 },
+     [VIRT_PLATFORM_BUS] = {  0x4000000,     0x2000000 },
++    [VIRT_WGC_DRAM] =     {  0x6000000,        0x1000 },
++    [VIRT_WGC_FLASH] =    {  0x6001000,        0x1000 },
++    [VIRT_WGC_UART] =     {  0x6002000,        0x1000 },
++    [VIRT_MY_DEVICE] =    {  0x6003000,        0x1000 },
++    [VIRT_MYDEV_DMA] =    {  0x6004000,        0x1000 },
++    [VIRT_WGC_MYDEV_DMA] ={  0x6005000,        0x1000 },
+     [VIRT_PLIC] =         {  0xc000000, VIRT_PLIC_SIZE(VIRT_CPUS_MAX * 2) },
+     [VIRT_APLIC_M] =      {  0xc000000, APLIC_SIZE(VIRT_CPUS_MAX) },
+     [VIRT_APLIC_S] =      {  0xd000000, APLIC_SIZE(VIRT_CPUS_MAX) },
+@@ -101,6 +108,40 @@ static MemMapEntry virt_high_pcie_memmap;
+ 
+ #define VIRT_FLASH_SECTOR_SIZE (256 * KiB)
+ 
++/* wgChecker helpers */
++typedef struct WGCInfo {
++    int memmap_idx;
++    uint32_t irq_num;
++    uint32_t slot_count;
++
++    int num_of_child;
++    MemoryRegion *c_region[WGC_NUM_REGIONS];
++    uint64_t c_offset[WGC_NUM_REGIONS];
++} WGCInfo;
++
++enum {
++    WGC_DRAM,
++    WGC_FLASH,
++    WGC_UART,
++    WGC_MYDEV_DMA,
++    WGC_NUM,
++};
++
++static WGCInfo virt_wgcinfo[] = {
++    [WGC_DRAM]  = { VIRT_WGC_DRAM, WGC_DRAM_IRQ, 16 },
++    [WGC_FLASH] = { VIRT_WGC_FLASH, WGC_FLASH_IRQ, 16 },
++    [WGC_UART]  = { VIRT_WGC_UART, WGC_UART_IRQ, 1 },
++    [WGC_MYDEV_DMA]  = { VIRT_WGC_MYDEV_DMA, WGC_MYDEV_DMA_IRQ, 1 },
++};
++
++static void wgc_append_child(WGCInfo *info, MemoryRegion *region,
++                             uint64_t offset)
++{
++    info->c_region[info->num_of_child] = region;
++    info->c_offset[info->num_of_child] = offset;
++    info->num_of_child += 1;
++}
++
+ static PFlashCFI01 *virt_flash_create1(RISCVVirtState *s,
+                                        const char *name,
+                                        const char *alias_prop_name)
+@@ -151,7 +192,8 @@ static void virt_flash_map1(PFlashCFI01 *flash,
+ }
+ 
+ static void virt_flash_map(RISCVVirtState *s,
+-                           MemoryRegion *sysmem)
++                           MemoryRegion *sysmem,
++                           WGCInfo *info)
+ {
+     hwaddr flashsize = virt_memmap[VIRT_FLASH].size / 2;
+     hwaddr flashbase = virt_memmap[VIRT_FLASH].base;
+@@ -160,6 +202,15 @@ static void virt_flash_map(RISCVVirtState *s,
+                     sysmem);
+     virt_flash_map1(s->flash[1], flashbase + flashsize, flashsize,
+                     sysmem);
++
++    if (info) {
++        wgc_append_child(info,
++                         sysbus_mmio_get_region(SYS_BUS_DEVICE(s->flash[0]), 0),
++                         flashbase);
++        wgc_append_child(info,
++                         sysbus_mmio_get_region(SYS_BUS_DEVICE(s->flash[1]), 0),
++                         flashbase + flashsize);
++    }
+ }
+ 
+ static void create_pcie_irq_map(RISCVVirtState *s, void *fdt, char *nodename,
+@@ -1032,6 +1083,58 @@ static void create_fdt_virtio_iommu(RISCVVirtState *s, uint16_t bdf)
+                            bdf + 1, iommu_phandle, bdf + 1, 0xffff - bdf);
+ }
+ 
++static void create_fdt_my_device(RISCVVirtState *s, const MemMapEntry *memmap,
++                           uint32_t irq_mmio_phandle)
++{
++    MachineState *ms = MACHINE(s);
++    char *node = g_strdup_printf("/soc/my-device@%lx",
++                                 (unsigned long)memmap[VIRT_MY_DEVICE].base);
++    qemu_fdt_add_subnode(ms->fdt, node);
++
++    qemu_fdt_setprop_string(ms->fdt, node, "compatible", "mycompany,my-device");
++
++    uint32_t reg_prop[4] = {
++        0x0,
++        cpu_to_be32(memmap[VIRT_MY_DEVICE].base),
++        0x0,
++        cpu_to_be32(memmap[VIRT_MY_DEVICE].size),
++    };
++
++    qemu_fdt_setprop(ms->fdt, node, "reg", reg_prop, sizeof(reg_prop));
++    qemu_fdt_setprop(ms->fdt, node, "dma-coherent", NULL, 0);
++
++    qemu_fdt_setprop_cell(ms->fdt, node, "interrupt-parent", irq_mmio_phandle);
++    qemu_fdt_setprop_cell(ms->fdt, node, "interrupts", MY_DEVICE_IRQ);
++    qemu_fdt_setprop_string(ms->fdt, node, "status", "okay");
++    g_free(node);
++}
++
++static void create_fdt_mydev_dma(RISCVVirtState *s, const MemMapEntry *memmap,
++                           uint32_t irq_mmio_phandle)
++{
++    MachineState *ms = MACHINE(s);
++    char *node = g_strdup_printf("/soc/mydev-dma@%lx",
++                                 (unsigned long)memmap[VIRT_MYDEV_DMA].base);
++    qemu_fdt_add_subnode(ms->fdt, node);
++
++    qemu_fdt_setprop_string(ms->fdt, node, "compatible", "mycompany,mydev-dma");
++
++    uint32_t reg_prop[4] = {
++        0x0,
++        cpu_to_be32(memmap[VIRT_MYDEV_DMA].base),
++        0x0,
++        cpu_to_be32(memmap[VIRT_MYDEV_DMA].size),
++    };
++
++    qemu_fdt_setprop(ms->fdt, node, "reg", reg_prop, sizeof(reg_prop));
++    qemu_fdt_setprop(ms->fdt, node, "dma-coherent", NULL, 0);
++
++    qemu_fdt_setprop_cell(ms->fdt, node, "interrupt-parent", irq_mmio_phandle);
++    qemu_fdt_setprop_cell(ms->fdt, node, "interrupts", MYDEV_DMA_IRQ);
++    qemu_fdt_setprop_string(ms->fdt, node, "status", "okay");
++    g_free(node);
++}
++
+ static void finalize_fdt(RISCVVirtState *s)
+ {
+     uint32_t phandle = 1, irq_mmio_phandle = 1, msi_pcie_phandle = 1;
+@@ -1050,6 +1153,9 @@ static void finalize_fdt(RISCVVirtState *s)
+     create_fdt_uart(s, virt_memmap, irq_mmio_phandle);
+ 
+     create_fdt_rtc(s, virt_memmap, irq_mmio_phandle);
++
++    create_fdt_my_device(s, virt_memmap, irq_mmio_phandle);
++    create_fdt_mydev_dma(s, virt_memmap, irq_mmio_phandle);
+ }
+ 
+ static void create_fdt(RISCVVirtState *s, const MemMapEntry *memmap)
+@@ -1329,6 +1435,71 @@ static void virt_build_smbios(RISCVVirtState *s)
+     }
+ }
+ 
++static DeviceState *create_wgc(WGCInfo *info, DeviceState *irqchip)
++{
++    MemoryRegion *system_memory = get_system_memory();
++    DeviceState *wgc;
++    MemoryRegion *upstream_mr, *downstream_mr;
++    qemu_irq irq = qdev_get_gpio_in(irqchip, info->irq_num);
++    hwaddr base, size;
++
++    /* Unmap downstream_mr from system_memory if it is already mapped. */
++    for (int i=0; i<info->num_of_child; i++) {
++        downstream_mr = info->c_region[i];
++
++        g_assert(downstream_mr);
++        if (downstream_mr->container == system_memory) {
++            memory_region_del_subregion(system_memory, downstream_mr);
++        }
++
++        /*
++         * Clear the offset of downstream_mr, so we could correctly do
++         * address_space_init() to it in wgchecker.
++         */
++        memory_region_set_address(downstream_mr, 0);
++    }
++
++    base = virt_memmap[info->memmap_idx].base;
++    size = virt_memmap[info->memmap_idx].size;
++
++    wgc = riscv_wgchecker_create(
++        base, size, irq, info->slot_count, 0, 0,
++        info->num_of_child, info->c_region, info->c_offset, 0, NULL);
++
++    /* Map upstream_mr to system_memory */
++    for (int i=0; i<info->num_of_child; i++) {
++        upstream_mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(wgc), i+1);
++        g_assert(upstream_mr);
++        memory_region_add_subregion(system_memory, info->c_offset[i], upstream_mr);
++    }
++
++    return wgc;
++}
++
++static void virt_create_worldguard(WGCInfo *wgcinfo, int wgc_num,
++                                   DeviceState *irqchip)
++{
++    CPUState *cpu;
++
++    /* Global WG config */
++    riscv_worldguard_create(VIRT_WG_NWORLDS,
++                            VIRT_WG_TRUSTEDWID,
++                            VIRT_WG_HWBYPASS,
++                            VIRT_WG_TZCOMPAT);
++
++    /* Enable WG extension of each CPU */
++    CPU_FOREACH(cpu) {
++        CPURISCVState *env = cpu ? cpu_env(cpu) : NULL;
++
++        riscv_worldguard_apply_cpu(env->mhartid);
++    }
++
++    /* Create all wgChecker devices */
++    for (int i=0; i<wgc_num; i++) {
++        create_wgc(&wgcinfo[i], DEVICE(irqchip));
++    }
++}
++
+ static void virt_machine_done(Notifier *notifier, void *data)
+ {
+     RISCVVirtState *s = container_of(notifier, RISCVVirtState,
+@@ -1427,10 +1598,12 @@ static void virt_machine_done(Notifier *notifier, void *data)
+ static void virt_machine_init(MachineState *machine)
+ {
+     const MemMapEntry *memmap = virt_memmap;
++    WGCInfo *wgcinfo = virt_wgcinfo;
+     RISCVVirtState *s = RISCV_VIRT_MACHINE(machine);
+     MemoryRegion *system_memory = get_system_memory();
+     MemoryRegion *mask_rom = g_new(MemoryRegion, 1);
+     DeviceState *mmio_irqchip, *virtio_irqchip, *pcie_irqchip;
++    SerialMM *uart;
+     int i, base_hartid, hart_count;
+     int socket_count = riscv_socket_count(machine);
+ 
+@@ -1446,6 +1619,11 @@ static void virt_machine_init(MachineState *machine)
+         exit(1);
+     }
+ 
++    if (!tcg_enabled() && s->have_wg) {
++        error_report("'wg' is only available with TCG acceleration");
++        exit(1);
++    }
++
+     /* Initialize sockets */
+     mmio_irqchip = virtio_irqchip = pcie_irqchip = NULL;
+     for (i = 0; i < socket_count; i++) {
+@@ -1573,6 +1751,10 @@ static void virt_machine_init(MachineState *machine)
+     memory_region_add_subregion(system_memory, memmap[VIRT_DRAM].base,
+         machine->ram);
+ 
++    if (tcg_enabled() && s->have_wg) {
++        wgc_append_child(&wgcinfo[WGC_DRAM], machine->ram, memmap[VIRT_DRAM].base);
++    }
++
+     /* boot rom */
+     memory_region_init_rom(mask_rom, NULL, "riscv_virt_board.mrom",
+                            memmap[VIRT_MROM].size, &error_fatal);
+@@ -1600,10 +1782,16 @@ static void virt_machine_init(MachineState *machine)
+ 
+     create_platform_bus(s, mmio_irqchip);
+ 
+-    serial_mm_init(system_memory, memmap[VIRT_UART0].base,
++    uart = serial_mm_init(system_memory, memmap[VIRT_UART0].base,
+         0, qdev_get_gpio_in(mmio_irqchip, UART0_IRQ), 399193,
+         serial_hd(0), DEVICE_LITTLE_ENDIAN);
+ 
++    if (tcg_enabled() && s->have_wg) {
++        wgc_append_child(&wgcinfo[WGC_UART],
++                         sysbus_mmio_get_region(SYS_BUS_DEVICE(uart), 0),
++                         memmap[VIRT_UART0].base);
++    }
++
+     sysbus_create_simple("goldfish_rtc", memmap[VIRT_RTC].base,
+         qdev_get_gpio_in(mmio_irqchip, RTC_IRQ));
+ 
+@@ -1612,7 +1800,31 @@ static void virt_machine_init(MachineState *machine)
+         pflash_cfi01_legacy_drive(s->flash[i],
+                                   drive_get(IF_PFLASH, 0, i));
+     }
+-    virt_flash_map(s, system_memory);
++
++    if (tcg_enabled() && s->have_wg) {
++        virt_flash_map(s, system_memory, &wgcinfo[WGC_FLASH]);
++    } else {
++        virt_flash_map(s, system_memory, NULL);
++    }
++    
++    sysbus_create_simple("my-device", memmap[VIRT_MY_DEVICE].base,
++                         qdev_get_gpio_in(mmio_irqchip, MY_DEVICE_IRQ));
++    DeviceState* mydev = sysbus_create_simple("mydev-dma", memmap[VIRT_MYDEV_DMA].base,
++                         qdev_get_gpio_in(mmio_irqchip, MYDEV_DMA_IRQ));
++
++    if (mydev == NULL) {
++        error_report("create mydev failed\n");
++        exit(1);
++    }
++
++    wgc_append_child(&wgcinfo[WGC_MYDEV_DMA],
++                     sysbus_mmio_get_region(SYS_BUS_DEVICE(mydev), 0),
++                     memmap[VIRT_MYDEV_DMA].base);
++
++
++    if (tcg_enabled() && s->have_wg) {
++        virt_create_worldguard(wgcinfo, WGC_NUM, mmio_irqchip);
++    }
+ 
+     /* load/create device tree */
+     if (machine->dtb) {
+@@ -1640,6 +1852,20 @@ static void virt_machine_instance_init(Object *obj)
+     s->acpi = ON_OFF_AUTO_AUTO;
+ }
+ 
++static bool virt_get_wg(Object *obj, Error **errp)
++{
++    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
++
++    return s->have_wg;
++}
++
++static void virt_set_wg(Object *obj, bool value, Error **errp)
++{
++    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
++
++    s->have_wg = value;
++}
++
+ static char *virt_get_aia_guests(Object *obj, Error **errp)
+ {
+     RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
+@@ -1710,6 +1936,20 @@ static void virt_set_aclint(Object *obj, bool value, Error **errp)
+     s->have_aclint = value;
+ }
+ 
++static char *virt_get_rom(Object *obj, Error **errp)
++{
++    RISCVVirtState *rvs = RISCV_VIRT_MACHINE(obj);
++    return g_strdup(rvs->rom);
++}
++
++static void virt_set_rom(Object *obj, const char *value, Error **errp)
++{
++    RISCVVirtState *rvs = RISCV_VIRT_MACHINE(obj);
++
++    g_free(rvs->rom);
++    rvs->rom = g_strdup(value);
++}
++
+ bool virt_is_acpi_enabled(RISCVVirtState *s)
+ {
+     return s->acpi != ON_OFF_AUTO_OFF;
+@@ -1815,6 +2055,9 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
+                             "Valid value should be between 0 and %d.",
+                             VIRT_IRQCHIP_MAX_GUESTS);
+         object_class_property_set_description(oc, "aia-guests", str);
++
++        object_class_property_add_str(oc, "rom", virt_get_rom, virt_set_rom);
++        object_class_property_set_description(oc, "rom", "ROM image");
+     }
+ 
+     object_class_property_add(oc, "acpi", "OnOffAuto",
+@@ -1822,6 +2065,12 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
+                               NULL, NULL);
+     object_class_property_set_description(oc, "acpi",
+                                           "Enable ACPI");
++
++    object_class_property_add_bool(oc, "wg", virt_get_wg,
++                                   virt_set_wg);
++    object_class_property_set_description(oc, "wg",
++                                              "Set on/off to enable/disable the "
++                                              "RISC-V WorldGuard.");
+ }
+ 
+ static const TypeInfo virt_machine_typeinfo = {
+diff --git a/include/exec/exec-all.h b/include/exec/exec-all.h
+index 72240ef..7430858 100644
+--- a/include/exec/exec-all.h
++++ b/include/exec/exec-all.h
+@@ -205,7 +205,7 @@ void tlb_flush_range_by_mmuidx_all_cpus_synced(CPUState *cpu,
+  * used by tlb_flush_page.
+  */
+ void tlb_set_page_full(CPUState *cpu, int mmu_idx, vaddr addr,
+-                       CPUTLBEntryFull *full);
++                       MMUAccessType access_type, CPUTLBEntryFull *full);
+ 
+ /**
+  * tlb_set_page_with_attrs:
+@@ -231,7 +231,8 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx, vaddr addr,
+  */
+ void tlb_set_page_with_attrs(CPUState *cpu, vaddr addr,
+                              hwaddr paddr, MemTxAttrs attrs,
+-                             int prot, int mmu_idx, vaddr size);
++                             int prot, MMUAccessType access_type, int mmu_idx,
++                             vaddr size);
+ /* tlb_set_page:
+  *
+  * This function is equivalent to calling tlb_set_page_with_attrs()
+@@ -240,7 +241,8 @@ void tlb_set_page_with_attrs(CPUState *cpu, vaddr addr,
+  */
+ void tlb_set_page(CPUState *cpu, vaddr addr,
+                   hwaddr paddr, int prot,
+-                  int mmu_idx, vaddr size);
++                  MMUAccessType access_type, int mmu_idx,
++                  vaddr size);
+ #else
+ static inline void tlb_init(CPUState *cpu)
+ {
+@@ -596,7 +598,8 @@ void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
+ MemoryRegionSection *
+ address_space_translate_for_iotlb(CPUState *cpu, int asidx, hwaddr addr,
+                                   hwaddr *xlat, hwaddr *plen,
+-                                  MemTxAttrs attrs, int *prot);
++                                  MemTxAttrs attrs, int *prot,
++                                  MMUAccessType access_type);
+ hwaddr memory_region_section_get_iotlb(CPUState *cpu,
+                                        MemoryRegionSection *section);
+ #endif
+diff --git a/include/exec/memattrs.h b/include/exec/memattrs.h
+index 14cdd8d..335b59b 100644
+--- a/include/exec/memattrs.h
++++ b/include/exec/memattrs.h
+@@ -52,6 +52,12 @@ typedef struct MemTxAttrs {
+     unsigned int memory:1;
+     /* Requester ID (for MSI for example) */
+     unsigned int requester_id:16;
++
++    /*
++     * RISC-V WorldGuard: the 5-bit WID of memory access.
++     */
++    uint8_t world_id;
++    uint8_t mwid;
+ } MemTxAttrs;
+ 
+ /* Bus masters which don't specify any attributes will get this,
+diff --git a/include/hw/core/cpu.h b/include/hw/core/cpu.h
+index 1c9c775..01b40a7 100644
+--- a/include/hw/core/cpu.h
++++ b/include/hw/core/cpu.h
+@@ -217,6 +217,9 @@ typedef struct CPUTLBEntryFull {
+      */
+     hwaddr xlat_section;
+ 
++    /* @section contains physical section. */
++    MemoryRegionSection *section;
++
+     /*
+      * @phys_addr contains the physical address in the address space
+      * given by cpu_asidx_from_attrs(cpu, @attrs).
+diff --git a/include/hw/misc/riscv_worldguard.h b/include/hw/misc/riscv_worldguard.h
+new file mode 100644
+index 0000000..f532025
+--- /dev/null
++++ b/include/hw/misc/riscv_worldguard.h
+@@ -0,0 +1,123 @@
++/*
++ * RISC-V WorldGuard Devices
++ *
++ * Copyright (c) 2022 RISCV, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2 or later, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along with
++ * this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef HW_RISCV_WORLDGUARD_H
++#define HW_RISCV_WORLDGUARD_H
++
++#include "qom/object.h"
++#include "hw/sysbus.h"
++#include "exec/hwaddr.h"
++
++#define TYPE_RISCV_WORLDGUARD "riscv.worldguard"
++
++#define NO_TRUSTEDWID           UINT32_MAX
++
++typedef struct RISCVWorldGuardState RISCVWorldGuardState;
++DECLARE_INSTANCE_CHECKER(RISCVWorldGuardState, RISCV_WORLDGUARD,
++                         TYPE_RISCV_WORLDGUARD)
++
++struct RISCVWorldGuardState {
++    /*< private >*/
++    DeviceState parent_obj;
++
++    /*< public >*/
++
++    /* Property */
++    uint32_t nworlds;
++    uint32_t trustedwid;
++    bool hw_bypass;
++    bool tz_compat;
++};
++
++extern struct RISCVWorldGuardState *worldguard_config;
++extern uint64_t wgc_slot_perm_mask;
++
++DeviceState *riscv_worldguard_create(uint32_t nworlds, uint32_t trustedwid,
++                                     bool hw_bypass, bool tz_compat);
++void riscv_worldguard_apply_cpu(uint32_t hartid);
++
++uint32_t mem_attrs_to_wid(MemTxAttrs attrs);
++bool could_access_wgblocks(MemTxAttrs attrs, const char *wgblock);
++
++#define TYPE_RISCV_WGCHECKER  "riscv.wgchecker"
++
++typedef struct RISCVWgCheckerState RISCVWgCheckerState;
++DECLARE_INSTANCE_CHECKER(RISCVWgCheckerState, RISCV_WGCHECKER,
++                         TYPE_RISCV_WGCHECKER)
++
++#define TYPE_RISCV_WGC_IOMMU_MEMORY_REGION    "riscv-wgc-iommu-memory-region"
++
++typedef struct WgCheckerSlot WgCheckerSlot;
++struct WgCheckerSlot {
++    uint64_t addr;
++    uint64_t perm;
++    uint32_t cfg;
++};
++
++typedef struct WgCheckerRegion WgCheckerRegion;
++struct WgCheckerRegion {
++    MemoryRegion *downstream;
++    uint64_t region_offset;
++
++    IOMMUMemoryRegion upstream;
++    MemoryRegion blocked_io;
++    AddressSpace downstream_as;
++    AddressSpace blocked_io_as;
++
++    RISCVWgCheckerState *wgchecker;
++};
++
++#define WGC_NUM_REGIONS     16
++
++struct RISCVWgCheckerState {
++    /*< private >*/
++    SysBusDevice parent_obj;
++    uint32_t num_default_slots;
++    WgCheckerSlot *default_slots;
++
++    /*< public >*/
++    MemoryRegion mmio;
++    WgCheckerSlot *slots;
++    qemu_irq irq;
++
++    /* error reg */
++    uint64_t errcause;
++    uint64_t erraddr;
++
++    /* Memory regions protected by wgChecker */
++    WgCheckerRegion mem_regions[WGC_NUM_REGIONS];
++
++    /* Property */
++    uint32_t slot_count; /* nslots */
++    uint32_t mmio_size;
++    uint64_t addr_range_start;
++    uint64_t addr_range_size;
++    bool hw_bypass;
++};
++
++DeviceState *riscv_wgchecker_create(hwaddr addr, uint32_t size,
++                                    qemu_irq irq, uint32_t slot_count,
++                                    uint64_t addr_range_start,
++                                    uint64_t addr_range_size,
++                                    uint32_t num_of_region,
++                                    MemoryRegion **downstream,
++                                    uint64_t *region_offset,
++                                    uint32_t num_default_slots,
++                                    WgCheckerSlot *default_slots);
++
++#endif
+diff --git a/include/hw/riscv/virt.h b/include/hw/riscv/virt.h
+index c0dc41f..a5259fc 100644
+--- a/include/hw/riscv/virt.h
++++ b/include/hw/riscv/virt.h
+@@ -57,11 +57,13 @@ struct RISCVVirtState {
+     bool have_aclint;
+     RISCVVirtAIAType aia_type;
+     int aia_guests;
++    bool have_wg;
+     char *oem_id;
+     char *oem_table_id;
+     OnOffAuto acpi;
+     const MemMapEntry *memmap;
+     struct GPEXHost *gpex_host;
++    char *rom;
+ };
+ 
+ enum {
+@@ -84,12 +86,24 @@ enum {
+     VIRT_PCIE_MMIO,
+     VIRT_PCIE_PIO,
+     VIRT_PLATFORM_BUS,
+-    VIRT_PCIE_ECAM
++    VIRT_PCIE_ECAM,
++    VIRT_WGC_DRAM,
++    VIRT_WGC_FLASH,
++    VIRT_WGC_UART,
++    VIRT_MY_DEVICE,
++    VIRT_MYDEV_DMA,
++    VIRT_WGC_MYDEV_DMA,
+ };
+ 
+ enum {
+     UART0_IRQ = 10,
+     RTC_IRQ = 11,
++    WGC_DRAM_IRQ = 15,
++    WGC_FLASH_IRQ = 16,
++    WGC_UART_IRQ = 17,
++    MY_DEVICE_IRQ = 18,
++    MYDEV_DMA_IRQ = 19,
++    WGC_MYDEV_DMA_IRQ = 20,
+     VIRTIO_IRQ = 1, /* 1 to 8 */
+     VIRTIO_COUNT = 8,
+     PCIE_IRQ = 0x20, /* 32 to 35 */
+@@ -99,7 +113,7 @@ enum {
+ #define VIRT_PLATFORM_BUS_NUM_IRQS 32
+ 
+ #define VIRT_IRQCHIP_NUM_MSIS 255
+-#define VIRT_IRQCHIP_NUM_SOURCES 96
++#define VIRT_IRQCHIP_NUM_SOURCES 128
+ #define VIRT_IRQCHIP_NUM_PRIO_BITS 3
+ #define VIRT_IRQCHIP_MAX_GUESTS_BITS 3
+ #define VIRT_IRQCHIP_MAX_GUESTS ((1U << VIRT_IRQCHIP_MAX_GUESTS_BITS) - 1U)
+@@ -154,4 +168,10 @@ uint32_t imsic_num_bits(uint32_t count);
+ #error "Can't accommodate all IMSIC groups in address space"
+ #endif
+ 
++/* WorldGuard */
++#define VIRT_WG_NWORLDS        8 
++#define VIRT_WG_TRUSTEDWID     7
++#define VIRT_WG_HWBYPASS        true
++#define VIRT_WG_TZCOMPAT        false
++
+ #endif
+diff --git a/linux-drivers/my_device/Makefile b/linux-drivers/my_device/Makefile
+new file mode 100644
+index 0000000..458132b
+--- /dev/null
++++ b/linux-drivers/my_device/Makefile
+@@ -0,0 +1,8 @@
++obj-m += mydevice_driver.o
++PWD := $(shell pwd)
++#LINUXSRC=
++default:
++	$(MAKE) -C $(LINUXSRC) ARCH=riscv CROSS_COMPILE=riscv64-unknown-linux-gnu- M=$(PWD)
++
++clean:
++	rm -rvf *.o *.ko *.order *.symvers *.mod.c .tmp_versions .*o.cmd
+diff --git a/linux-drivers/my_device/mydevice_driver.c b/linux-drivers/my_device/mydevice_driver.c
+new file mode 100644
+index 0000000..16cc161
+--- /dev/null
++++ b/linux-drivers/my_device/mydevice_driver.c
+@@ -0,0 +1,132 @@
++
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/of.h>
++#include <linux/of_device.h>
++#include <linux/interrupt.h>
++#include <linux/irq.h>
++#include <linux/irqdesc.h>
++#include <linux/pm_runtime.h>
++#include <linux/slab.h>
++#include <linux/workqueue.h>
++
++#define DRIVER_NAME "my-device-driver"
++#define DEFAULT_PHYS_ADDR 0x006003000ULL
++#define DEFAULT_SIZE 0x1000
++#define REG0_OFFSET 0x0
++
++struct mydev
++{
++    struct device *dev;
++    int irq;
++    void __iomem *regs;
++    resource_size_t size;
++
++    struct work_struct irq_work;
++    atomic_t irq_count;
++};
++
++static void mydev_irq_work_fn(struct work_struct *work)
++{
++    struct mydev *m = container_of(work, struct mydev, irq_work);
++
++    pr_info("%s: IRQ bottom half: handled (count=%d)\n", DRIVER_NAME, atomic_read(&m->irq_count));
++    u32 val = ioread32(m->regs + REG0_OFFSET);
++    pr_info("%s: read offset 0x0 - %#x\n", DRIVER_NAME, val);
++}
++
++static irqreturn_t mydev_threaded_irq(int irq, void *dev_id)
++{
++    struct mydev *m = dev_id;
++    atomic_inc(&m->irq_count);
++    schedule_work(&m->irq_work);
++    return IRQ_HANDLED;
++}
++
++static int mydev_probe(struct platform_device *pdev)
++{
++    struct mydev *m;
++    int irq;
++    int err;
++
++    pr_info("%s: probe start\n", DRIVER_NAME);
++
++    m = devm_kzalloc(&pdev->dev, sizeof(*m), GFP_KERNEL);
++    if (!m)
++        return -ENOMEM;
++    m->dev = &pdev->dev;
++    platform_set_drvdata(pdev, m);
++
++    atomic_set(&m->irq_count, 0);
++    INIT_WORK(&m->irq_work, mydev_irq_work_fn);
++
++    struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++    m->regs = devm_ioremap_resource(&pdev->dev, res);
++
++    irq = platform_get_irq(pdev, 0);
++    if (irq < 0)
++    {
++        pr_info("%s: failed to get IRQ: %d\n", DRIVER_NAME, irq);
++        return irq;
++    }
++
++    m->irq = irq;
++
++    err = devm_request_threaded_irq(&pdev->dev,
++                                    m->irq,
++                                    NULL,               /*primary (top) handler*/
++                                    mydev_threaded_irq, /*threaded handler*/
++                                    IRQF_ONESHOT,       /*flags*/
++                                    DRIVER_NAME,
++                                    m);
++    if (err)
++    {
++        pr_info("%s: request_threaded_irq failed: %d\n", DRIVER_NAME, err);
++        return err;
++    }
++
++    pr_info("%s: requested irq: %d\n", DRIVER_NAME, m->irq);
++
++    /** Optionally mask/enable/power-down/up using PM calls here:
++     * pm_runtime_enable(m->dev);
++     * pm_runtime_get_sync(m->dev);
++     */
++
++    pr_info("%s:probe OK\n", DRIVER_NAME);
++    iowrite32(1, m->regs + 0x4);
++    return 0;
++}
++
++static int mydev_remove(struct platform_device *pdev)
++{
++    struct mydev *m = platform_get_drvdata(pdev);
++
++    pr_info("%s: remove\n", DRIVER_NAME);
++
++    cancel_work_sync(&m->irq_work);
++
++    return 0;
++}
++
++static const struct of_device_id mydev_of_match[] = {
++    {
++        .compatible = "mycompany,my-device",
++    },
++    {/*sentinel*/}};
++
++MODULE_DEVICE_TABLE(of, mydev_of_match);
++
++static struct platform_driver mydev_platform_driver = {
++    .driver = {
++        .name = DRIVER_NAME,
++        .of_match_table = mydev_of_match,
++    },
++    .probe = mydev_probe,
++    .remove = mydev_remove,
++};
++
++module_platform_driver(mydev_platform_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("You");
++MODULE_DESCRIPTION("Simple MMIO driver");
+diff --git a/linux-drivers/mydev_dma/Makefile b/linux-drivers/mydev_dma/Makefile
+new file mode 100644
+index 0000000..a37904f
+--- /dev/null
++++ b/linux-drivers/mydev_dma/Makefile
+@@ -0,0 +1,8 @@
++obj-m += mydev_dma_driver.o
++PWD := $(shell pwd)
++#LINUXSRC :=
++default:
++	$(MAKE) -C $(LINUXSRC) ARCH=riscv CROSS_COMPILE=riscv64-unknown-linux-gnu- M=$(PWD)
++
++clean:
++	rm -rvf *.o *.ko *.order *.symvers *.mod.c .tmp_versions .*o.cmd
+diff --git a/linux-drivers/mydev_dma/mydev_dma_driver.c b/linux-drivers/mydev_dma/mydev_dma_driver.c
+new file mode 100644
+index 0000000..b256151
+--- /dev/null
++++ b/linux-drivers/mydev_dma/mydev_dma_driver.c
+@@ -0,0 +1,262 @@
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/of.h>
++#include <linux/of_device.h>
++#include <linux/io.h>
++#include <linux/dma-mapping.h>
++#include <linux/interrupt.h>
++#include <linux/completion.h>
++#include <linux/miscdevice.h>
++#include <linux/fs.h>
++#include <linux/uaccess.h>
++#include <linux/slab.h>
++#include <linux/wait.h>
++
++#define DRIVER_NAME "mydev-dma-driver"
++#define MISC_NAME "mydev"
++#define DMA_BUF_SIZE 4096
++
++/* offsets must match QEMU device */
++#define MYDEV_OFF_CMD 0x00
++#define MYDEV_OFF_DMA_GPA_LOW 0x08
++#define MYDEV_OFF_DMA_GPA_HIGH 0x0c
++#define MYDEV_OFF_DMA_LEN 0x10
++#define MYDEV_OFF_STATUS 0x18
++
++/* ioctl commands */
++#define MYDEV_IOC_MAGIC 'M'
++#define MYDEV_CMD_DEVICE_TO_USER _IO(MYDEV_IOC_MAGIC, 1) /* device -> guest (device writes into buffer) */
++#define MYDEV_CMD_USER_TO_DEVICE _IO(MYDEV_IOC_MAGIC, 2) /* guest -> device (device reads from buffer) */
++
++typedef struct
++{
++    struct device *dev;
++    void __iomem *mmio;
++
++    int irq;
++    struct completion done; /* signaled by irq handler */
++
++    void *dma_buf;         /* kernel virtual (CPU) addr returned by dma_alloc_coherent */
++    dma_addr_t dma_handle; /* dma (physical) address to give to device (guest physical) */
++    size_t dma_size;
++    struct miscdevice misc; /* /dev/mydev */
++} mydev_t;
++
++mydev_t mydev;
++
++static irqreturn_t mydev_irq_thread(int irq, void *devid)
++{
++    uint32_t status;
++
++    // read status from device; we don't use it much here
++    status = readl(mydev.mmio + MYDEV_OFF_STATUS);
++    dev_info(mydev.dev, "mydev: IRQ thread - status=%#x\n", status);
++
++    // wake any waiter (ioctl)
++    complete(&mydev.done);
++
++    return IRQ_HANDLED;
++}
++
++// ioctl - start device DMA and wait for completion
++static long mydev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
++{
++    dev_info(mydev.dev, "mydev: mydev_ioctl cmd: %d\n", cmd);
++    int ret;
++
++    switch (cmd)
++    {
++    case MYDEV_CMD_DEVICE_TO_USER:
++        reinit_completion(&mydev.done);
++
++        // write DMA address (split 64-bit)
++        writel((uint32_t)(mydev.dma_handle & 0xffffffff), mydev.mmio + MYDEV_OFF_DMA_GPA_LOW);
++        writel((uint32_t)((mydev.dma_handle >> 32) & 0xffffffff), mydev.mmio + MYDEV_OFF_DMA_GPA_HIGH);
++
++        // length
++        writel((uint32_t)mydev.dma_size, mydev.mmio + MYDEV_OFF_DMA_LEN);
++
++        // Trigger device -> guest DMA (CMD=1)
++        writel(1, mydev.mmio + MYDEV_OFF_CMD);
++
++        // wait for completion (interrupt)
++        ret = wait_for_completion_interruptible_timeout(&mydev.done, msecs_to_jiffies(5000));
++        if (ret == 0)
++        {
++            dev_err(mydev.dev, "mydev: timeout waiting for DMA completion\n");
++            return -ETIMEDOUT;
++        }
++        else if (ret < 0)
++        {
++            return ret;
++        }
++        return 0;
++    case MYDEV_CMD_USER_TO_DEVICE:
++        reinit_completion(&mydev.done);
++
++        // user filled the mapped buffer; now ask device to read from guest (CMD=2)
++        writel((uint32_t)(mydev.dma_handle & 0xffffffff), mydev.mmio + MYDEV_OFF_DMA_GPA_LOW);
++        writel((uint32_t)((mydev.dma_handle >> 32) & 0xffffffff), mydev.mmio + MYDEV_OFF_DMA_GPA_HIGH);
++        writel((uint32_t)mydev.dma_size, mydev.mmio + MYDEV_OFF_DMA_LEN);
++
++        // Trigger guest -> device DMA (CMD=2)
++        writel(2, mydev.mmio + MYDEV_OFF_CMD);
++
++        ret = wait_for_completion_interruptible_timeout(&mydev.done, msecs_to_jiffies(5000));
++        if (ret == 0)
++        {
++            dev_err(mydev.dev, "mydev: timeout waiting for DMA completion\n");
++            return -ETIMEDOUT;
++        }
++        else if (ret < 0)
++        {
++            return ret;
++        }
++        return 0;
++    default:
++        return -ENOTTY;
++    }
++}
++
++// mmap: expose coherent DMA buffer to userspace
++static int mydev_mmap(struct file *filp, struct vm_area_struct *vma)
++{
++    // struct mydev *m = container_of(filp->private_data, struct mydev, misc);
++    unsigned long size = vma->vm_end - vma->vm_start;
++    dev_info(mydev.dev, "mydev_mmap size: %#lx dma_size: %#lx\n", size, mydev.dma_size);
++    if (size > mydev.dma_size)
++        return -EINVAL;
++
++    // dma_mmap_coherent maps a DMA coherent buffer into userspace and handles
++    // cache attributes appropriately.
++    if (dma_mmap_coherent(mydev.dev, vma, mydev.dma_buf, mydev.dma_handle, mydev.dma_size) < 0)
++        return -EFAULT;
++
++    return 0;
++}
++
++static int mydev_open(struct inode *inode, struct file *filp)
++{
++    // provide file->private_data so file ops can access mydev
++    // struct mydev *m = container_of(container_of(inode->i_cdev, struct miscdevice, minor), struct mydev, misc);
++    // struct mydev *m = container_of(filp->private_data, struct mydev, misc);
++    dev_info(mydev.dev, "mydev_open\n");
++    filp->private_data = &mydev;
++
++    return 0;
++}
++
++static const struct file_operations mydev_fops = {
++    .owner = THIS_MODULE,
++    .open = mydev_open,
++    .unlocked_ioctl = mydev_ioctl,
++    .mmap = mydev_mmap,
++    /* you can add .release if needed */
++};
++
++static int mydev_probe(struct platform_device *pdev)
++{
++    struct resource *res;
++    int ret;
++
++    // struct mydev *m;
++    // m = devm_kzalloc(&pdev->dev, sizeof(*m), GFP_KERNEL);
++    // if (!m)
++    //     return -ENOMEM;
++    mydev.dev = &pdev->dev;
++    platform_set_drvdata(pdev, &mydev);
++
++    // MMIO mapping
++    res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++    if (!res)
++    {
++        dev_err(&pdev->dev, "no MMIO resource\n");
++        return -ENODEV;
++    }
++
++    mydev.mmio = devm_ioremap_resource(&pdev->dev, res);
++    if (IS_ERR(mydev.mmio))
++        return PTR_ERR(mydev.mmio);
++
++    // allocate a DMA coherent buffer
++    mydev.dma_size = DMA_BUF_SIZE;
++    mydev.dma_buf = dma_alloc_coherent(mydev.dev, mydev.dma_size, &mydev.dma_handle, GFP_KERNEL);
++    if (!mydev.dma_buf)
++    {
++        dev_err(mydev.dev, "dma_alloc_coherent failed\n");
++        return -ENOMEM;
++    }
++    dev_info(mydev.dev, "DMA buffer: cpu=%p dma=%pad size=%zu\n",
++             mydev.dma_buf, &mydev.dma_handle, mydev.dma_size);
++
++    // request irq
++    mydev.irq = platform_get_irq(pdev, 0);
++    if (mydev.irq < 0)
++    {
++        dev_err(mydev.dev, "no irq\n");
++        ret = mydev.irq;
++        goto err_free_dma;
++    }
++
++    init_completion(&mydev.done);
++
++    ret = devm_request_threaded_irq(&pdev->dev, mydev.irq, NULL, mydev_irq_thread,
++                                    IRQF_ONESHOT, DRIVER_NAME, &mydev);
++    if (ret)
++    {
++        dev_err(mydev.dev, "request irq failed: %d\n", ret);
++        goto err_free_dma;
++    }
++
++    // register misc device
++    mydev.misc.minor = MISC_DYNAMIC_MINOR;
++    mydev.misc.name = MISC_NAME;
++    mydev.misc.fops = &mydev_fops;
++    mydev.misc.parent = mydev.dev;
++    ret = misc_register(&mydev.misc);
++    if (ret)
++    {
++        dev_err(mydev.dev, "misc_register failed: %d\n", ret);
++        goto err_free_dma;
++    }
++
++    dev_info(mydev.dev, "mydev_dma probe OK, /dev/%s riq %d ready\n", MISC_NAME, mydev.irq);
++    return 0;
++
++err_free_dma:
++    dma_free_coherent(mydev.dev, mydev.dma_size, mydev.dma_buf, mydev.dma_handle);
++    return ret;
++}
++
++static int mydev_remove(struct platform_device *pdev)
++{
++    // struct mydev *m = platform_get_drvdata(pdev);
++    misc_deregister(&mydev.misc);
++    if (mydev.dma_buf)
++        dma_free_coherent(mydev.dev, mydev.dma_size, mydev.dma_buf, mydev.dma_handle);
++
++    return 0;
++}
++
++static const struct of_device_id mydev_of_match[] = {
++    {
++        .compatible = "mycompany,mydev-dma",
++    },
++    {},
++};
++MODULE_DEVICE_TABLE(of, mydev_of_match);
++
++static struct platform_driver mydev_driver = {
++    .probe = mydev_probe,
++    .remove = mydev_remove,
++    .driver = {
++        .name = DRIVER_NAME,
++        .of_match_table = mydev_of_match,
++    },
++};
++
++module_platform_driver(mydev_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Sungkeun Kim");
++MODULE_DESCRIPTION("DMA Device for WorldClave");
+diff --git a/linux-drivers/mydev_dma/user-refernce/MyDMADevice.cpp b/linux-drivers/mydev_dma/user-refernce/MyDMADevice.cpp
+new file mode 100644
+index 0000000..06d50e4
+--- /dev/null
++++ b/linux-drivers/mydev_dma/user-refernce/MyDMADevice.cpp
+@@ -0,0 +1,71 @@
++#include <stdio.h>
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <sys/ioctl.h>
++#include <unistd.h>
++#include <stdint.h>
++#include <string.h>
++#include <errno.h>
++
++#include "MyDMADevice.hpp"
++
++MyDMADevice::MyDMADevice()
++{
++    fd = open(MYDEV_PATH, O_RDWR);
++    if (fd < 0)
++    {
++        perror("open");
++    }
++
++    map = mmap(NULL, DMA_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
++    if (map == MAP_FAILED)
++    {
++        perror("mmap");
++        close(fd);
++    }
++    printf("[HOST] Mapped dma buffer at %p (size %d)\n", map, DMA_SIZE);
++}
++MyDMADevice::~MyDMADevice()
++{
++    munmap(map, DMA_SIZE);
++    close(fd);
++}
++
++int MyDMADevice::device2DMA()
++{
++    int ret;
++    // Trigger device -> guest DMA (device will write into the buffer)
++    if (ret = ioctl(fd, MYDEV_CMD_DEVICE_TO_USER) < 0)
++    {
++        perror("[HOST] ioctl DEVICE_TO_USER ERROR");
++    }
++    else
++    {
++        printf("[HOST] After DEVICE -> USER DMA, first 64 bytes:\n");
++        unsigned char *p = (unsigned char *)map;
++        for (int i = 0; i < 64; ++i)
++        {
++            printf("%02x ", p[i]);
++            if ((i & 0xf) == 0xf)
++                printf("\n");
++        }
++        printf("\n");
++    }
++    return ret;
++}
++
++int MyDMADevice::dma2Device()
++{
++    int ret;
++    // Fill buffer with 0xA5 pattern and trigger USER->DEVICE DMA
++    // memset(map, 0xA5, DMA_SIZE);
++    if (ret = ioctl(fd, MYDEV_CMD_USER_TO_DEVICE) < 0)
++    {
++        perror("[HOST] ioctl USER_TO_DEVICE");
++    }
++    else
++    {
++        printf("[HOST] USER -> DEVICE DMA completed (device should have read the buffer)\n");
++    }
++    return ret;
++}
+diff --git a/linux-drivers/mydev_dma/user-refernce/MyDMADevice.hpp b/linux-drivers/mydev_dma/user-refernce/MyDMADevice.hpp
+new file mode 100644
+index 0000000..553e029
+--- /dev/null
++++ b/linux-drivers/mydev_dma/user-refernce/MyDMADevice.hpp
+@@ -0,0 +1,24 @@
++#ifndef _MY_DMA_DEVICE_H_
++#define _MY_DMA_DEVICE_H_
++
++#define MYDEV_PATH "/dev/mydev"
++#define MYDEV_IOC_MAGIC 'M'
++#define MYDEV_CMD_DEVICE_TO_USER _IO(MYDEV_IOC_MAGIC, 1)
++#define MYDEV_CMD_USER_TO_DEVICE _IO(MYDEV_IOC_MAGIC, 2)
++#define DMA_SIZE 4096
++
++class MyDMADevice
++{
++
++public:
++    MyDMADevice();
++    ~MyDMADevice();
++    int device2DMA();
++    int dma2Device();
++
++private:
++    int fd;
++    void *map;
++};
++
++#endif
+diff --git a/system/physmem.c b/system/physmem.c
+index 94600a3..c8f0bb0 100644
+--- a/system/physmem.c
++++ b/system/physmem.c
+@@ -674,12 +674,14 @@ void tcg_iommu_init_notifier_list(CPUState *cpu)
+ MemoryRegionSection *
+ address_space_translate_for_iotlb(CPUState *cpu, int asidx, hwaddr orig_addr,
+                                   hwaddr *xlat, hwaddr *plen,
+-                                  MemTxAttrs attrs, int *prot)
++                                  MemTxAttrs attrs, int *prot,
++                                  MMUAccessType access_type)
+ {
+     MemoryRegionSection *section;
+     IOMMUMemoryRegion *iommu_mr;
+     IOMMUMemoryRegionClass *imrc;
+     IOMMUTLBEntry iotlb;
++    IOMMUAccessFlags iommu_flags;
+     int iommu_idx;
+     hwaddr addr = orig_addr;
+     AddressSpaceDispatch *d = cpu->cpu_ases[asidx].memory_dispatch;
+@@ -696,10 +698,14 @@ address_space_translate_for_iotlb(CPUState *cpu, int asidx, hwaddr orig_addr,
+ 
+         iommu_idx = imrc->attrs_to_index(iommu_mr, attrs);
+         tcg_register_iommu_notifier(cpu, iommu_mr, iommu_idx);
+-        /* We need all the permissions, so pass IOMMU_NONE so the IOMMU
+-         * doesn't short-cut its translation table walk.
+-         */
+-        iotlb = imrc->translate(iommu_mr, addr, IOMMU_NONE, iommu_idx);
++
++        if (access_type == MMU_DATA_STORE) {
++            iommu_flags = IOMMU_WO;
++        } else {
++            iommu_flags = IOMMU_RO;
++        }
++
++        iotlb = imrc->translate(iommu_mr, addr, iommu_flags, iommu_idx);
+         addr = ((iotlb.translated_addr & ~iotlb.addr_mask)
+                 | (addr & iotlb.addr_mask));
+         /* Update the caller's prot bits to remove permissions the IOMMU
+diff --git a/target/alpha/helper.c b/target/alpha/helper.c
+index 2f1000c..7ea548f 100644
+--- a/target/alpha/helper.c
++++ b/target/alpha/helper.c
+@@ -318,7 +318,7 @@ bool alpha_cpu_tlb_fill(CPUState *cs, vaddr addr, int size,
+     }
+ 
+     tlb_set_page(cs, addr & TARGET_PAGE_MASK, phys & TARGET_PAGE_MASK,
+-                 prot, mmu_idx, TARGET_PAGE_SIZE);
++                 prot, access_type, mmu_idx, TARGET_PAGE_SIZE);
+     return true;
+ }
+ 
+diff --git a/target/arm/tcg/tlb_helper.c b/target/arm/tcg/tlb_helper.c
+index 885bf4e..186c612 100644
+--- a/target/arm/tcg/tlb_helper.c
++++ b/target/arm/tcg/tlb_helper.c
+@@ -361,7 +361,7 @@ bool arm_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+         res.f.extra.arm.pte_attrs = res.cacheattrs.attrs;
+         res.f.extra.arm.shareability = res.cacheattrs.shareability;
+ 
+-        tlb_set_page_full(cs, mmu_idx, address, &res.f);
++        tlb_set_page_full(cs, mmu_idx, address, access_type, &res.f);
+         return true;
+     } else if (probe) {
+         return false;
+diff --git a/target/avr/helper.c b/target/avr/helper.c
+index 345708a..07d7958 100644
+--- a/target/avr/helper.c
++++ b/target/avr/helper.c
+@@ -149,7 +149,7 @@ bool avr_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+         }
+     }
+ 
+-    tlb_set_page(cs, address, paddr, prot, mmu_idx, page_size);
++    tlb_set_page(cs, address, paddr, prot, access_type, mmu_idx, page_size);
+     return true;
+ }
+ 
+diff --git a/target/cris/helper.c b/target/cris/helper.c
+index 1c3f868..6442443 100644
+--- a/target/cris/helper.c
++++ b/target/cris/helper.c
+@@ -68,7 +68,7 @@ bool cris_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+         phy = res.phy & ~0x80000000;
+         prot = res.prot;
+         tlb_set_page(cs, address & TARGET_PAGE_MASK, phy,
+-                     prot, mmu_idx, TARGET_PAGE_SIZE);
++                     prot, access_type, mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     }
+ 
+diff --git a/target/hppa/mem_helper.c b/target/hppa/mem_helper.c
+index b984f73..0a42d47 100644
+--- a/target/hppa/mem_helper.c
++++ b/target/hppa/mem_helper.c
+@@ -461,7 +461,7 @@ bool hppa_cpu_tlb_fill(CPUState *cs, vaddr addr, int size,
+      * because we record the large page here in the hppa tlb.
+      */
+     tlb_set_page(cs, addr & TARGET_PAGE_MASK, phys & TARGET_PAGE_MASK,
+-                 prot, mmu_idx, TARGET_PAGE_SIZE);
++                 prot, type, mmu_idx, TARGET_PAGE_SIZE);
+     return true;
+ }
+ 
+diff --git a/target/i386/tcg/sysemu/excp_helper.c b/target/i386/tcg/sysemu/excp_helper.c
+index 8fb05b1..c7a53a1 100644
+--- a/target/i386/tcg/sysemu/excp_helper.c
++++ b/target/i386/tcg/sysemu/excp_helper.c
+@@ -610,7 +610,8 @@ bool x86_cpu_tlb_fill(CPUState *cs, vaddr addr, int size,
+         tlb_set_page_with_attrs(cs, addr & TARGET_PAGE_MASK,
+                                 out.paddr & TARGET_PAGE_MASK,
+                                 cpu_get_mem_attrs(env),
+-                                out.prot, mmu_idx, out.page_size);
++                                out.prot, access_type, mmu_idx,
++                                out.page_size);
+         return true;
+     }
+ 
+diff --git a/target/loongarch/tcg/tlb_helper.c b/target/loongarch/tcg/tlb_helper.c
+index 97f38fc..8f5a999 100644
+--- a/target/loongarch/tcg/tlb_helper.c
++++ b/target/loongarch/tcg/tlb_helper.c
+@@ -490,7 +490,7 @@ bool loongarch_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+     if (ret == TLBRET_MATCH) {
+         tlb_set_page(cs, address & TARGET_PAGE_MASK,
+                      physical & TARGET_PAGE_MASK, prot,
+-                     mmu_idx, TARGET_PAGE_SIZE);
++                     access_type, mmu_idx, TARGET_PAGE_SIZE);
+         qemu_log_mask(CPU_LOG_MMU,
+                       "%s address=%" VADDR_PRIx " physical " HWADDR_FMT_plx
+                       " prot %d\n", __func__, address, physical, prot);
+diff --git a/target/m68k/helper.c b/target/m68k/helper.c
+index 4c85bad..52def8a 100644
+--- a/target/m68k/helper.c
++++ b/target/m68k/helper.c
+@@ -966,7 +966,7 @@ bool m68k_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+         tlb_set_page(cs, address & TARGET_PAGE_MASK,
+                      address & TARGET_PAGE_MASK,
+                      PAGE_READ | PAGE_WRITE | PAGE_EXEC,
+-                     mmu_idx, TARGET_PAGE_SIZE);
++                     qemu_access_type, mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     }
+ 
+@@ -986,7 +986,8 @@ bool m68k_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+                                address, access_type, &page_size);
+     if (likely(ret == 0)) {
+         tlb_set_page(cs, address & TARGET_PAGE_MASK,
+-                     physical & TARGET_PAGE_MASK, prot, mmu_idx, page_size);
++                     physical & TARGET_PAGE_MASK, prot, qemu_access_type,
++                     mmu_idx, page_size);
+         return true;
+     }
+ 
+@@ -1458,6 +1459,7 @@ void HELPER(ptest)(CPUM68KState *env, uint32_t addr, uint32_t is_read)
+     int prot;
+     int ret;
+     target_ulong page_size;
++    MMUAccessType qemu_access_type;
+ 
+     access_type = ACCESS_PTEST;
+     if (env->dfc & 4) {
+@@ -1465,9 +1467,11 @@ void HELPER(ptest)(CPUM68KState *env, uint32_t addr, uint32_t is_read)
+     }
+     if ((env->dfc & 3) == 2) {
+         access_type |= ACCESS_CODE;
++        qemu_access_type = MMU_INST_FETCH;
+     }
+     if (!is_read) {
+         access_type |= ACCESS_STORE;
++        qemu_access_type = MMU_DATA_STORE;
+     }
+ 
+     env->mmu.mmusr = 0;
+@@ -1477,7 +1481,7 @@ void HELPER(ptest)(CPUM68KState *env, uint32_t addr, uint32_t is_read)
+     if (ret == 0) {
+         tlb_set_page(env_cpu(env), addr & TARGET_PAGE_MASK,
+                      physical & TARGET_PAGE_MASK,
+-                     prot, access_type & ACCESS_SUPER ?
++                     prot, qemu_access_type, access_type & ACCESS_SUPER ?
+                      MMU_KERNEL_IDX : MMU_USER_IDX, page_size);
+     }
+ }
+diff --git a/target/microblaze/helper.c b/target/microblaze/helper.c
+index 5d3259c..5229daf 100644
+--- a/target/microblaze/helper.c
++++ b/target/microblaze/helper.c
+@@ -53,8 +53,8 @@ bool mb_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+         /* MMU disabled or not available.  */
+         address &= TARGET_PAGE_MASK;
+         prot = PAGE_RWX;
+-        tlb_set_page_with_attrs(cs, address, address, attrs, prot, mmu_idx,
+-                                TARGET_PAGE_SIZE);
++        tlb_set_page_with_attrs(cs, address, address, attrs, prot, access_type,
++                                mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     }
+ 
+@@ -65,8 +65,8 @@ bool mb_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+ 
+         qemu_log_mask(CPU_LOG_MMU, "MMU map mmu=%d v=%x p=%x prot=%x\n",
+                       mmu_idx, vaddr, paddr, lu.prot);
+-        tlb_set_page_with_attrs(cs, vaddr, paddr, attrs, lu.prot, mmu_idx,
+-                                TARGET_PAGE_SIZE);
++        tlb_set_page_with_attrs(cs, vaddr, paddr, attrs, lu.prot, access_type,
++                                mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     }
+ 
+diff --git a/target/mips/tcg/sysemu/tlb_helper.c b/target/mips/tcg/sysemu/tlb_helper.c
+index 3836137..0560ab3 100644
+--- a/target/mips/tcg/sysemu/tlb_helper.c
++++ b/target/mips/tcg/sysemu/tlb_helper.c
+@@ -932,7 +932,7 @@ bool mips_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+     if (ret == TLBRET_MATCH) {
+         tlb_set_page(cs, address & TARGET_PAGE_MASK,
+                      physical & TARGET_PAGE_MASK, prot,
+-                     mmu_idx, TARGET_PAGE_SIZE);
++                     access_type, mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     }
+ #if !defined(TARGET_MIPS64)
+@@ -950,7 +950,7 @@ bool mips_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+             if (ret == TLBRET_MATCH) {
+                 tlb_set_page(cs, address & TARGET_PAGE_MASK,
+                              physical & TARGET_PAGE_MASK, prot,
+-                             mmu_idx, TARGET_PAGE_SIZE);
++                             access_type, mmu_idx, TARGET_PAGE_SIZE);
+                 return true;
+             }
+         }
+diff --git a/target/openrisc/mmu.c b/target/openrisc/mmu.c
+index c632d52..a04003c 100644
+--- a/target/openrisc/mmu.c
++++ b/target/openrisc/mmu.c
+@@ -128,7 +128,7 @@ bool openrisc_cpu_tlb_fill(CPUState *cs, vaddr addr, int size,
+     if (likely(excp == 0)) {
+         tlb_set_page(cs, addr & TARGET_PAGE_MASK,
+                      phys_addr & TARGET_PAGE_MASK, prot,
+-                     mmu_idx, TARGET_PAGE_SIZE);
++                     access_type, mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     }
+     if (probe) {
+diff --git a/target/ppc/mmu_helper.c b/target/ppc/mmu_helper.c
+index b0a0676..dd264ac 100644
+--- a/target/ppc/mmu_helper.c
++++ b/target/ppc/mmu_helper.c
+@@ -1368,7 +1368,7 @@ bool ppc_cpu_tlb_fill(CPUState *cs, vaddr eaddr, int size,
+     if (ppc_xlate(cpu, eaddr, access_type, &raddr,
+                   &page_size, &prot, mmu_idx, !probe)) {
+         tlb_set_page(cs, eaddr & TARGET_PAGE_MASK, raddr & TARGET_PAGE_MASK,
+-                     prot, mmu_idx, 1UL << page_size);
++                     prot, access_type, mmu_idx, 1UL << page_size);
+         return true;
+     }
+     if (probe) {
+diff --git a/target/riscv/cpu.c b/target/riscv/cpu.c
+index a90808a..76a9c20 100644
+--- a/target/riscv/cpu.c
++++ b/target/riscv/cpu.c
+@@ -209,6 +209,9 @@ const RISCVIsaExtData isa_edata_arr[] = {
+     ISA_EXT_DATA_ENTRY(xtheadmempair, PRIV_VERSION_1_11_0, ext_xtheadmempair),
+     ISA_EXT_DATA_ENTRY(xtheadsync, PRIV_VERSION_1_11_0, ext_xtheadsync),
+     ISA_EXT_DATA_ENTRY(xventanacondops, PRIV_VERSION_1_12_0, ext_XVentanaCondOps),
++    ISA_EXT_DATA_ENTRY(smwg, PRIV_VERSION_1_12_0, ext_smwg),
++    ISA_EXT_DATA_ENTRY(smwgd, PRIV_VERSION_1_12_0, ext_smwgd),
++    ISA_EXT_DATA_ENTRY(sswg, PRIV_VERSION_1_12_0, ext_sswg),
+ 
+     DEFINE_PROP_END_OF_LIST(),
+ };
+@@ -1024,6 +1027,10 @@ static void riscv_cpu_reset_hold(Object *obj, ResetType type)
+         riscv_trigger_reset_hold(env);
+     }
+ 
++    if (riscv_cpu_cfg(env)->ext_smwg && env->wg_reset) {
++        env->wg_reset(env);
++    }
++
+     if (kvm_enabled()) {
+         kvm_riscv_reset_vcpu(cpu);
+     }
+@@ -1605,6 +1612,11 @@ const RISCVCPUMultiExtConfig riscv_cpu_experimental_exts[] = {
+ const RISCVCPUMultiExtConfig riscv_cpu_named_features[] = {
+     MULTI_EXT_CFG_BOOL("zic64b", ext_zic64b, true),
+ 
++    /* RISC-V WorldGuard v0.4 */
++    MULTI_EXT_CFG_BOOL("x-smwg", ext_smwg, false),
++    MULTI_EXT_CFG_BOOL("x-smwgd", ext_smwgd, false),
++    MULTI_EXT_CFG_BOOL("x-sswg", ext_sswg, false),
++
+     DEFINE_PROP_END_OF_LIST(),
+ };
+ 
+@@ -2693,6 +2705,8 @@ static Property riscv_cpu_properties[] = {
+      * it with -x and default to 'false'.
+      */
+     DEFINE_PROP_BOOL("x-misa-w", RISCVCPU, cfg.misa_w, false),
++    DEFINE_PROP_UINT32("mwid", RISCVCPU, cfg.mwid, UINT32_MAX),
++    DEFINE_PROP_UINT32("mwidlist", RISCVCPU, cfg.mwidlist, UINT32_MAX),
+     DEFINE_PROP_END_OF_LIST(),
+ };
+ 
+@@ -2739,7 +2753,7 @@ static int64_t riscv_get_arch_id(CPUState *cs)
+ #include "hw/core/sysemu-cpu-ops.h"
+ 
+ static const struct SysemuCPUOps riscv_sysemu_ops = {
+-    .get_phys_page_debug = riscv_cpu_get_phys_page_debug,
++    .get_phys_page_attrs_debug = riscv_cpu_get_phys_page_attrs_debug,
+     .write_elf64_note = riscv_cpu_write_elf64_note,
+     .write_elf32_note = riscv_cpu_write_elf32_note,
+     .legacy_vmsd = &vmstate_riscv_cpu,
+diff --git a/target/riscv/cpu.h b/target/riscv/cpu.h
+index 1619c3a..b85945a 100644
+--- a/target/riscv/cpu.h
++++ b/target/riscv/cpu.h
+@@ -472,6 +472,16 @@ struct CPUArchState {
+     uint64_t kvm_timer_state;
+     uint64_t kvm_timer_frequency;
+ #endif /* CONFIG_KVM */
++
++    /* RISC-V WorldGuard */
++    target_ulong mlwid;
++    target_ulong mwid;
++    target_ulong slwid;
++    target_ulong mwiddeleg;
++
++    /* machine specific WorldGuard callback */
++    void (*wg_reset)(CPURISCVState *env);
++    void (*wid_to_mem_attrs)(MemTxAttrs *attrs, uint32_t wid, uint32_t mwid);
+ };
+ 
+ /*
+@@ -544,6 +554,7 @@ void riscv_cpu_set_geilen(CPURISCVState *env, target_ulong geilen);
+ bool riscv_cpu_vector_enabled(CPURISCVState *env);
+ void riscv_cpu_set_virt_enabled(CPURISCVState *env, bool enable);
+ int riscv_env_mmu_index(CPURISCVState *env, bool ifetch);
++hwaddr riscv_cpu_get_phys_page_attrs_debug(CPUState *cpu, vaddr addr, MemTxAttrs *attrs);
+ G_NORETURN void  riscv_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
+                                                MMUAccessType access_type,
+                                                int mmu_idx, uintptr_t retaddr);
+@@ -581,6 +592,8 @@ void riscv_cpu_set_aia_ireg_rmw_fn(CPURISCVState *env, uint32_t priv,
+                                    void *rmw_fn_arg);
+ 
+ RISCVException smstateen_acc_ok(CPURISCVState *env, int index, uint64_t bit);
++void riscv_cpu_set_wg_mwid(CPURISCVState *env, uint32_t mwid);
++void riscv_cpu_set_wg_mwidlist(CPURISCVState *env, uint32_t mwidlist);
+ #endif /* !CONFIG_USER_ONLY */
+ 
+ void riscv_cpu_set_mode(CPURISCVState *env, target_ulong newpriv, bool virt_en);
+diff --git a/target/riscv/cpu_bits.h b/target/riscv/cpu_bits.h
+index 32b068f..65de16b 100644
+--- a/target/riscv/cpu_bits.h
++++ b/target/riscv/cpu_bits.h
+@@ -363,6 +363,12 @@
+ #define CSR_DPC             0x7b1
+ #define CSR_DSCRATCH        0x7b2
+ 
++/* RISC-V WorldGuard */
++#define CSR_MLWID           0x390
++#define CSR_MWID           0x391
++#define CSR_SLWID           0x190
++#define CSR_MWIDDELEG       0x748
++
+ /* Performance Counters */
+ #define CSR_MHPMCOUNTER3    0xb03
+ #define CSR_MHPMCOUNTER4    0xb04
+diff --git a/target/riscv/cpu_cfg.h b/target/riscv/cpu_cfg.h
+index 8b272fb..c454cb6 100644
+--- a/target/riscv/cpu_cfg.h
++++ b/target/riscv/cpu_cfg.h
+@@ -125,6 +125,9 @@ struct RISCVCPUConfig {
+     bool ext_ssaia;
+     bool ext_sscofpmf;
+     bool ext_smepmp;
++    bool ext_smwg;
++    bool ext_smwgd;
++    bool ext_sswg;
+     bool rvv_ta_all_1s;
+     bool rvv_ma_all_1s;
+ 
+@@ -169,6 +172,8 @@ struct RISCVCPUConfig {
+     bool pmp;
+     bool debug;
+     bool misa_w;
++    uint32_t mwid;
++    uint32_t mwidlist;
+ 
+     bool short_isa_string;
+ 
+diff --git a/target/riscv/cpu_helper.c b/target/riscv/cpu_helper.c
+index 395a1d9..69c34bd 100644
+--- a/target/riscv/cpu_helper.c
++++ b/target/riscv/cpu_helper.c
+@@ -149,6 +149,52 @@ void cpu_get_tb_cpu_state(CPURISCVState *env, vaddr *pc,
+     *pflags = flags;
+ }
+ 
++#ifndef CONFIG_USER_ONLY
++static uint32_t riscv_cpu_wg_get_wid(CPURISCVState *env, int mode)
++{
++    CPUState *cs = env_cpu(env);
++    RISCVCPU *cpu = RISCV_CPU(cs);
++    bool virt = env->virt_enabled;
++
++    if (mode == PRV_M) {
++        return cpu->cfg.mwid;
++    } else if (mode == PRV_S) {
++        if (!virt || !env->mwiddeleg) {
++            /* HS-mode, S-mode w/o RVH, or VS-mode but mwiddeleg = 0 */
++            return env->mlwid;
++        } else {
++            /* VS-mode */
++            return env->slwid;
++        }
++    } else if (mode == PRV_U) {
++        if (!riscv_has_ext(env, RVS) || !env->mwiddeleg) {
++            /* M/U mode CPU or mwiddeleg = 0 */
++            return env->mlwid;
++        } else {
++            return env->slwid;
++        }
++    }
++
++    return cpu->cfg.mwid;
++}
++
++void riscv_cpu_set_wg_mwid(CPURISCVState *env, uint32_t mwid)
++{
++    CPUState *cs = env_cpu(env);
++    RISCVCPU *cpu = RISCV_CPU(cs);
++
++    cpu->cfg.mwid = mwid;
++}
++
++void riscv_cpu_set_wg_mwidlist(CPURISCVState *env, uint32_t mwidlist)
++{
++    CPUState *cs = env_cpu(env);
++    RISCVCPU *cpu = RISCV_CPU(cs);
++
++    cpu->cfg.mwidlist = mwidlist;
++}
++#endif /* CONFIG_USER_ONLY */
++
+ void riscv_cpu_update_mask(CPURISCVState *env)
+ {
+     target_ulong mask = 0, base = 0;
+@@ -1214,13 +1260,22 @@ static void raise_mmu_exception(CPURISCVState *env, target_ulong address,
+     env->two_stage_indirect_lookup = two_stage_indirect;
+ }
+ 
+-hwaddr riscv_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
++hwaddr riscv_cpu_get_phys_page_attrs_debug(CPUState *cs, vaddr addr, MemTxAttrs *attrs)
+ {
+     RISCVCPU *cpu = RISCV_CPU(cs);
+     CPURISCVState *env = &cpu->env;
+     hwaddr phys_addr;
+     int prot;
+     int mmu_idx = riscv_env_mmu_index(&cpu->env, false);
++    int mode = mmuidx_priv(mmu_idx);
++    uint32_t wid;
++
++    if (riscv_cpu_cfg(env)->ext_smwg && env->wid_to_mem_attrs) {
++        wid = riscv_cpu_wg_get_wid(env, mode);
++        env->wid_to_mem_attrs(attrs, wid, env->mwid);
++    } else {
++        *attrs = MEMTXATTRS_UNSPECIFIED;
++    }
+ 
+     if (get_physical_address(env, &phys_addr, &prot, addr, NULL, 0, mmu_idx,
+                              true, env->virt_enabled, true)) {
+@@ -1324,12 +1379,20 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+     int mode = mmuidx_priv(mmu_idx);
+     /* default TLB page size */
+     target_ulong tlb_size = TARGET_PAGE_SIZE;
++    uint32_t wid;
++    MemTxAttrs attrs = MEMTXATTRS_UNSPECIFIED;
+ 
+     env->guest_phys_fault_addr = 0;
+ 
+     qemu_log_mask(CPU_LOG_MMU, "%s ad %" VADDR_PRIx " rw %d mmu_idx %d\n",
+                   __func__, address, access_type, mmu_idx);
+ 
++    if (riscv_cpu_cfg(env)->ext_smwg && env->wid_to_mem_attrs) {
++        mode = mmuidx_priv(mmu_idx);
++        wid = riscv_cpu_wg_get_wid(env, mode);
++        env->wid_to_mem_attrs(&attrs, wid, env->mwid);
++    }
++
+     pmu_tlb_fill_incr_ctr(cpu, access_type);
+     if (two_stage_lookup) {
+         /* Two stage lookup */
+@@ -1421,8 +1484,8 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+     }
+ 
+     if (ret == TRANSLATE_SUCCESS) {
+-        tlb_set_page(cs, address & ~(tlb_size - 1), pa & ~(tlb_size - 1),
+-                     prot, mmu_idx, tlb_size);
++        tlb_set_page_with_attrs(cs, address & ~(tlb_size - 1), pa & ~(tlb_size - 1),
++                                attrs, prot, access_type, mmu_idx, tlb_size);
+         return true;
+     } else if (probe) {
+         return false;
+diff --git a/target/riscv/csr.c b/target/riscv/csr.c
+index ea35603..fc77a3b 100644
+--- a/target/riscv/csr.c
++++ b/target/riscv/csr.c
+@@ -4566,6 +4566,128 @@ static RISCVException write_upmbase(CPURISCVState *env, int csrno,
+     return RISCV_EXCP_NONE;
+ }
+ 
++/* RISC-V Worldguard */
++static RISCVException worldguard_umode(CPURISCVState *env, int csrno)
++{
++    if (!riscv_cpu_cfg(env)->ext_smwg) {
++        return RISCV_EXCP_ILLEGAL_INST;
++    }
++
++    return umode(env, csrno);
++}
++
++static RISCVException worldguard_sumode(CPURISCVState *env, int csrno)
++{
++    RISCVException ret;
++
++    if (!riscv_cpu_cfg(env)->ext_sswg) {
++        return RISCV_EXCP_ILLEGAL_INST;
++    }
++
++    ret = smode(env, csrno);
++
++    if (ret != RISCV_EXCP_NONE) {
++        return ret;
++    }
++
++    return umode(env, csrno);
++}
++static RISCVException rmw_mwid(CPURISCVState *env, int csrno,
++                                target_ulong *ret_val,
++                                target_ulong new_val, target_ulong wr_mask)
++{
++    CPUState *cs = env_cpu(env);
++    target_ulong new_mwid = (env->mwid & ~wr_mask) | (new_val & wr_mask);
++
++    if (ret_val) {
++        *ret_val = env->mwid;
++    }
++
++    if (env->mwid != new_mwid) {
++        env->mwid = new_mwid;
++        tlb_flush(cs);
++    }
++
++    return RISCV_EXCP_NONE;
++}
++
++static RISCVException rmw_mlwid(CPURISCVState *env, int csrno,
++                                target_ulong *ret_val,
++                                target_ulong new_val, target_ulong wr_mask)
++{
++    CPUState *cs = env_cpu(env);
++    RISCVCPU *cpu = RISCV_CPU(cs);
++    target_ulong new_mlwid = (env->mlwid & ~wr_mask) | (new_val & wr_mask);
++
++    if (ret_val) {
++        *ret_val = env->mlwid;
++    }
++
++    g_assert(cpu->cfg.mwidlist);
++    if (!(BIT(new_mlwid) & cpu->cfg.mwidlist)) {
++        /* Set WID to lowest legal value if writing illegal value (WARL) */
++        new_mlwid = find_first_bit((unsigned long *)&cpu->cfg.mwidlist, 32);
++    }
++
++    if (env->mlwid != new_mlwid) {
++        env->mlwid = new_mlwid;
++        tlb_flush(cs);
++    }
++
++    return RISCV_EXCP_NONE;
++}
++
++static RISCVException rmw_slwid(CPURISCVState *env, int csrno,
++                                target_ulong *ret_val,
++                                target_ulong new_val, target_ulong wr_mask)
++{
++    target_ulong new_slwid = (env->slwid & ~wr_mask) | (new_val & wr_mask);
++
++    if (!env->mwiddeleg) {
++        /*
++         * When mwiddeleg CSR is zero, access to slwid raises an illegal
++         * instruction exception.
++         */
++        printf("[WGCSR] slwid is not accessible when mwiddeleg is zero\n");
++        return RISCV_EXCP_ILLEGAL_INST;
++    }
++
++    if (ret_val) {
++        *ret_val = env->slwid;
++    }
++
++    if (!(BIT(new_slwid) & env->mwiddeleg)) {
++        /* Set WID to lowest legal value if writing illegal value (WARL) */
++        new_slwid = find_first_bit(
++            (unsigned long *)&env->mwiddeleg, TARGET_LONG_BITS);
++    }
++
++    if (env->slwid != new_slwid) {
++        env->slwid = new_slwid;
++        tlb_flush(env_cpu(env));
++    }
++
++    return RISCV_EXCP_NONE;
++}
++
++static RISCVException rmw_mwiddeleg(CPURISCVState *env, int csrno,
++                                    target_ulong *ret_val,
++                                    target_ulong new_val, target_ulong wr_mask)
++{
++    CPUState *cs = env_cpu(env);
++    RISCVCPU *cpu = RISCV_CPU(cs);
++
++    if (ret_val) {
++        *ret_val = env->mwiddeleg;
++    }
++
++    env->mwiddeleg = (env->mwiddeleg & ~wr_mask) | (new_val & wr_mask);
++
++    /* Core wgMarker can only have WID value in mwidlist. */
++    env->mwiddeleg &= cpu->cfg.mwidlist;
++
++    return RISCV_EXCP_NONE;
++}
+ #endif
+ 
+ /* Crypto Extension */
+@@ -5597,5 +5719,10 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
+     [CSR_SCOUNTOVF]      = { "scountovf", sscofpmf,  read_scountovf,
+                              .min_priv_ver = PRIV_VERSION_1_12_0 },
+ 
++    /* RISC-V WorldGuard */
++    [CSR_MLWID]     = { "mlwid",     worldguard_umode,  NULL, NULL, rmw_mlwid },
++    [CSR_MWID]     = { "mwid",     worldguard_umode,  NULL, NULL, rmw_mwid },
++    [CSR_SLWID]     = { "slwid",     worldguard_sumode, NULL, NULL, rmw_slwid },
++    [CSR_MWIDDELEG] = { "mwiddeleg", worldguard_sumode, NULL, NULL, rmw_mwiddeleg },
+ #endif /* !CONFIG_USER_ONLY */
+ };
+diff --git a/target/riscv/tcg/tcg-cpu.c b/target/riscv/tcg/tcg-cpu.c
+index b8814ab..26a4a6e 100644
+--- a/target/riscv/tcg/tcg-cpu.c
++++ b/target/riscv/tcg/tcg-cpu.c
+@@ -623,6 +623,17 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
+         cpu->pmu_avail_ctrs = 0;
+     }
+ 
++    /* RISC-V WorldGuard */
++    if (cpu->cfg.ext_sswg && !cpu->cfg.ext_smwg) {
++        error_setg(errp, "Sswg extension requires Smwg extension");
++        return;
++    }
++
++    if (cpu->cfg.ext_smwgd != cpu->cfg.ext_sswg) {
++        error_setg(errp, "Smwgd/Sswg extensions should be enabled together");
++        return;
++    }
++
+     /*
+      * Disable isa extensions based on priv spec after we
+      * validated and set everything we need.
+diff --git a/target/rx/cpu.c b/target/rx/cpu.c
+index 36d2a6f..c041c06 100644
+--- a/target/rx/cpu.c
++++ b/target/rx/cpu.c
+@@ -163,7 +163,8 @@ static bool rx_cpu_tlb_fill(CPUState *cs, vaddr addr, int size,
+     /* Linear mapping */
+     address = physical = addr & TARGET_PAGE_MASK;
+     prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+-    tlb_set_page(cs, address, physical, prot, mmu_idx, TARGET_PAGE_SIZE);
++    tlb_set_page(cs, address, physical, prot, access_type,
++                 mmu_idx, TARGET_PAGE_SIZE);
+     return true;
+ }
+ 
+diff --git a/target/s390x/tcg/excp_helper.c b/target/s390x/tcg/excp_helper.c
+index 4c0b692..bcd9f80 100644
+--- a/target/s390x/tcg/excp_helper.c
++++ b/target/s390x/tcg/excp_helper.c
+@@ -178,7 +178,7 @@ bool s390_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+                       "%s: set tlb %" PRIx64 " -> %" PRIx64 " (%x)\n",
+                       __func__, (uint64_t)vaddr, (uint64_t)raddr, prot);
+         tlb_set_page(cs, address & TARGET_PAGE_MASK, raddr, prot,
+-                     mmu_idx, TARGET_PAGE_SIZE);
++                     access_type, mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     }
+     if (probe) {
+diff --git a/target/sh4/helper.c b/target/sh4/helper.c
+index 9659c69..e93216b 100644
+--- a/target/sh4/helper.c
++++ b/target/sh4/helper.c
+@@ -807,7 +807,7 @@ bool superh_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+     if (ret == MMU_OK) {
+         address &= TARGET_PAGE_MASK;
+         physical &= TARGET_PAGE_MASK;
+-        tlb_set_page(cs, address, physical, prot, mmu_idx, TARGET_PAGE_SIZE);
++        tlb_set_page(cs, address, physical, prot, access_type, mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     }
+     if (probe) {
+diff --git a/target/sparc/mmu_helper.c b/target/sparc/mmu_helper.c
+index 9ff0602..1dade2e 100644
+--- a/target/sparc/mmu_helper.c
++++ b/target/sparc/mmu_helper.c
+@@ -229,7 +229,7 @@ bool sparc_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+                       "Translate at %" VADDR_PRIx " -> "
+                       HWADDR_FMT_plx ", vaddr " TARGET_FMT_lx "\n",
+                       address, full.phys_addr, vaddr);
+-        tlb_set_page_full(cs, mmu_idx, vaddr, &full);
++        tlb_set_page_full(cs, mmu_idx, vaddr, access_type, &full);
+         return true;
+     }
+ 
+@@ -245,7 +245,7 @@ bool sparc_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+            neverland. Fake/overridden mappings will be flushed when
+            switching to normal mode. */
+         full.prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+-        tlb_set_page_full(cs, mmu_idx, vaddr, &full);
++        tlb_set_page_full(cs, mmu_idx, vaddr, access_type, &full);
+         return true;
+     } else {
+         if (access_type == MMU_INST_FETCH) {
+@@ -769,7 +769,7 @@ bool sparc_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+         trace_mmu_helper_mmu_fault(address, full.phys_addr, mmu_idx, env->tl,
+                                    env->dmmu.mmu_primary_context,
+                                    env->dmmu.mmu_secondary_context);
+-        tlb_set_page_full(cs, mmu_idx, address, &full);
++        tlb_set_page_full(cs, mmu_idx, address, access_type, &full);
+         return true;
+     }
+     if (probe) {
+diff --git a/target/tricore/helper.c b/target/tricore/helper.c
+index 7014255..295f515 100644
+--- a/target/tricore/helper.c
++++ b/target/tricore/helper.c
+@@ -84,7 +84,7 @@ bool tricore_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+     if (ret == TLBRET_MATCH) {
+         tlb_set_page(cs, address & TARGET_PAGE_MASK,
+                      physical & TARGET_PAGE_MASK, prot | PAGE_EXEC,
+-                     mmu_idx, TARGET_PAGE_SIZE);
++                     rw, mmu_idx, TARGET_PAGE_SIZE);
+         return true;
+     } else {
+         assert(ret < 0);
+diff --git a/target/xtensa/helper.c b/target/xtensa/helper.c
+index ca214b9..3a15563 100644
+--- a/target/xtensa/helper.c
++++ b/target/xtensa/helper.c
+@@ -280,7 +280,8 @@ bool xtensa_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+         tlb_set_page(cs,
+                      address & TARGET_PAGE_MASK,
+                      paddr & TARGET_PAGE_MASK,
+-                     access, mmu_idx, page_size);
++                     access, access_type, mmu_idx,
++                     page_size);
+         return true;
+     } else if (probe) {
+         return false;
+diff --git a/worldguard-patches-for-qemu-v9.1.0.zip b/worldguard-patches-for-qemu-v9.1.0.zip
+new file mode 100755
+index 0000000..efd4677
+Binary files /dev/null and b/worldguard-patches-for-qemu-v9.1.0.zip differ
