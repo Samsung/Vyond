@@ -53,6 +53,9 @@ pub fn smm_init<'a>() -> Result<(), Error> {
         flash.set_slot_perm(flash.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
         let uart = wg::WGChecker::new(wg::WGC_UART_BASE);
         uart.set_slot_perm(uart.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
+        // TODO: allow for only enclave 1 to access mydev
+        let mydev = wg::WGChecker::new(wg::WGC_MYDEV_BASE);
+        mydev.set_slot_perm(mydev.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
 
         let region = wg::region_init(SMM_BASE, SMM_SIZE, 3 << (wg::TRUSTED_WID * 2), false)?;
         wg::set_wg(region)?;
@@ -68,6 +71,9 @@ pub fn smm_init<'a>() -> Result<(), Error> {
         flash.set_slot_perm(flash.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
         let uart = wg::WGChecker::new(wg::WGC_UART_BASE);
         uart.set_slot_perm(uart.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
+        // TODO: allow for only enclave 1 to access mydev
+        let mydev = wg::WGChecker::new(wg::WGC_MYDEV_BASE);
+        mydev.set_slot_perm(mydev.get_nslots() as usize, (1 << (wg::NWORLDS * 2)) - 1);
 
         let region = wg::region_init(SMM_BASE, SMM_SIZE, 3 << (wg::TRUSTED_WID * 2), false)?;
         wg::set_wg(region)?;

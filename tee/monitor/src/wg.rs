@@ -28,12 +28,15 @@ pub const WGC_ALL_PERM: usize = (1 << (NWORLDS * 2)) - 1;
 pub const WGC_DRAM_BASE: usize = 0x600_0000;
 pub const WGC_FLASH_BASE: usize = 0x600_1000;
 pub const WGC_UART_BASE: usize = 0x600_2000;
+pub const WGC_MYDEV_BASE: usize = 0x600_5000;
 
 const DRAM_BASE: usize = 0x8000_0000;
 const FLASH_BASE: usize = 0x20000000;
 const FLASH_SIZE: usize = 0x4000000;
 const UART_BASE: usize = 0x10000000;
 const UART_SIZE: usize = 0x100;
+const MYDEV_BASE: usize = 0x600_4000;
+const MYDEV_SIZE: usize = 0x1000;
 
 /// WGC for Memory
 #[repr(C)]
@@ -74,6 +77,8 @@ impl WGChecker {
             Ok(WGChecker::new(WGC_FLASH_BASE))
         } else if UART_BASE <= base && base + size < UART_BASE + UART_SIZE {
             Ok(WGChecker::new(WGC_UART_BASE))
+        } else if MYDEV_BASE <= base && base + size < MYDEV_BASE + MYDEV_SIZE {
+            Ok(WGChecker::new(WGC_MYDEV_BASE))
         } else if DRAM_BASE <= base {
             Ok(WGChecker::new(WGC_DRAM_BASE))
         } else {
