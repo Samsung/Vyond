@@ -43,17 +43,10 @@ void ocall_get_string(struct edge_data *retdata)
     return;
 }
 
-shm_t ocall_loan_shm()
+shm_t ocall_loan_shm(int id)
 {
     shm_t shm;
-    ocall(OCALL_LOAN_SHM, NULL, 0, &shm, sizeof(shm_t));
+    ocall(OCALL_LOAN_SHM, &id, sizeof(int), &shm, sizeof(shm_t));
 
     return shm;
-}
-
-unsigned long ocall_mydev_cmd(int cmd)
-{
-    unsigned long status;
-    ocall(OCALL_MYDEV_CMD, &cmd, sizeof(int), &status, sizeof(unsigned long));
-    return status;
 }

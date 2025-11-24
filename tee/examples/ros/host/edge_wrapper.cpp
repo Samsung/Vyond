@@ -22,7 +22,6 @@ void edge_init(Keystone::Enclave *enclave)
     register_call(OCALL_PRINT_VALUE, print_value_wrapper);
     register_call(OCALL_GET_STRING, get_host_string_wrapper);
     register_call(OCALL_LOAN_SHM, loan_shm_wrapper);
-    register_call(OCALL_MYDEV_CMD, mydev_cmd_wrapper);
 
     // edge_call_init_internals(
     //     (uintptr_t)enclave->getSharedBuffer(), enclave->getSharedBufferSize());
@@ -127,9 +126,17 @@ void loan_shm_wrapper(void *buffer, size_t _shared_len)
      * buffer. This will have to change to allow nested calls. */
     struct edge_call *edge_call = (struct edge_call *)buffer;
 
+    uintptr_t call_args;
+    size_t arg_len;
+    if (edge_call_args_ptr(edge_call, &call_args, &arg_len, _shared_start, _shared_len) != 0)
+    {
+        edge_call->return_data.call_status = CALL_STATUS_BAD_OFFSET;
+        return;
+    }
+
     unsigned long ret_val;
     shm_t shm;
-    shm = loan_shm();
+    shm = loan_shm(*(int *)call_args);
 
     uintptr_t data_section = edge_call_data_ptr(_shared_start, _shared_len);
     memcpy((void *)data_section, &shm, sizeof(shm_t));

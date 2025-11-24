@@ -35,6 +35,6 @@ void get_host_string_wrapper(void *buffer, size_t size);
 const char *get_host_string();
 
 void loan_shm_wrapper(void *buffer, size_t size);
-shm_t loan_shm();
+shm_t loan_shm(int id);
 
 #endif /* _EDGE_WRAPPER_H_ */

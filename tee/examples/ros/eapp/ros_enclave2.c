@@ -7,7 +7,7 @@
 void EAPP_ENTRY eapp_entry()
 {
   // get region id (rid) from the host and map to the enclave's va space.
-  shm_t shm = ocall_loan_shm();
+  shm_t shm = ocall_loan_shm(1);
   void *dma = map_shm(shm.rid);
   ocall_print_value((uintptr_t)dma);
 

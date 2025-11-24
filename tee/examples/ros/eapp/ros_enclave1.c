@@ -25,11 +25,11 @@ static inline void mmio_write(void *reg, uint32_t val)
 void EAPP_ENTRY eapp_entry()
 {
   // get region id (rid) from the host and map to the enclave's va space.
-  shm_t shm = ocall_loan_shm();
-  ocall_print_value((uintptr_t)shm.rid);
-  ocall_print_value((uintptr_t)shm.pa);
-  ocall_print_value((uintptr_t)shm.size);
-  void *dma = map_shm(shm.rid);
+  shm_t shm_mydev = ocall_loan_shm(0);
+  ocall_print_value((uintptr_t)shm_mydev.rid);
+  ocall_print_value((uintptr_t)shm_mydev.pa);
+  ocall_print_value((uintptr_t)shm_mydev.size);
+  void *dma = map_shm(shm_mydev.rid);
   void *mydev = mydev_map(MYDEV_BASE, MYDEV_SIZE);
   ocall_print_value((uintptr_t)dma);
 
@@ -42,9 +42,9 @@ void EAPP_ENTRY eapp_entry()
     status = mmio_read(mydev + MYDEV_OFF_STATUS);
 
   // printf("[PUBLISHER] setup dma address %#lx and size %#lx\n", shm.pa, shm.size);
-  mmio_write(mydev + MYDEV_OFF_DMA_GPA_LOW, (uint32_t)(shm.pa & 0xffffffff));
-  mmio_write(mydev + MYDEV_OFF_DMA_GPA_HIGH, (uint32_t)((shm.pa >> 32) & 0xffffffff));
-  mmio_write(mydev + MYDEV_OFF_DMA_LEN, (uint32_t)shm.size);
+  mmio_write(mydev + MYDEV_OFF_DMA_GPA_LOW, (uint32_t)(shm_mydev.pa & 0xffffffff));
+  mmio_write(mydev + MYDEV_OFF_DMA_GPA_HIGH, (uint32_t)((shm_mydev.pa >> 32) & 0xffffffff));
+  mmio_write(mydev + MYDEV_OFF_DMA_LEN, (uint32_t)shm_mydev.size);
 
   // printf("[PUBLISHER] Send CMD 1 (device to dma)\n");
   mmio_write(mydev + MYDEV_OFF_CMD, 1);
@@ -54,16 +54,6 @@ void EAPP_ENTRY eapp_entry()
     status = mmio_read(mydev + MYDEV_OFF_STATUS);
 
   ocall_print_value(*(unsigned long *)dma);
-
-  // printf("[PUBLISHER] After DEVICE -> USER DMA, first 64 bytes:\n");
-  // unsigned char *p = (unsigned char *)dma;
-  // for (int i = 0; i < 64; ++i)
-  //{
-  //  printf("%02x ", p[i]);
-  //  if ((i & 0xf) == 0xf)
-  //    printf("\n");
-  //}
-  // printf("\n");
 
   // printf("[PUBLISHER] Writing Publisher to DMA\n");
   unsigned char *p = (unsigned char *)dma;
@@ -77,9 +67,19 @@ void EAPP_ENTRY eapp_entry()
   while (status != 0)
     status = mmio_read(mydev + MYDEV_OFF_STATUS);
 
-  // printf("[PUBLISHER] USER DMA -> DEVICE is done\n");
+  // printf("[PUBLISHER] Writing to shared mem for subsriber \n");
+  shm_t shm_sub = ocall_loan_shm(1);
+  ocall_print_value((uintptr_t)shm_sub.rid);
+  ocall_print_value((uintptr_t)shm_sub.pa);
+  ocall_print_value((uintptr_t)shm_sub.size);
+  void *sub = map_shm(shm_sub.rid);
+  ocall_print_value((uintptr_t)sub);
+  p = (unsigned char *)sub;
+  for (int i = 0; i < 64; ++i)
+    p[i] = 2;
 
-  unmap_shm(shm.rid, dma, shm.size);
+  unmap_shm(shm_mydev.rid, dma, shm_mydev.size);
+  unmap_shm(shm_sub.rid, sub, shm_sub.size);
   // mydev_unmap(mydev, MYDEV_SIZE);
   EAPP_RETURN(0);
 }

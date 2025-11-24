@@ -13,9 +13,8 @@
 using namespace Keystone;
 
 Enclave enc_publisher, enc_subscriber;
-SharedMemory shm;
+SharedMemory shm[2];
 void *shm_base;
-rid_t rid;
 
 void create_enclaves(char *publisher_path, char *subscriber_path, char *eyrie_path, char *loader_path)
 {
@@ -38,11 +37,18 @@ void create_enclaves(char *publisher_path, char *subscriber_path, char *eyrie_pa
 void init_shm()
 {
 
-  rid = shm.createShm(0x1000);
-  shm.changeShm(rid, 7);
-  shm.shareShm(rid, enc_publisher.getEID(), 7);
-  shm.shareShm(rid, enc_subscriber.getEID(), 7);
-  printf("[HOST] init_shm created rid %d\n", rid);
+  // shared region 0 (w1)
+  // It will be used by enclave 1 (publisher) and camera device
+  rid_t rid0 = shm[0].createShm(0x1000);
+  shm[0].changeShm(rid0, 7);
+  shm[0].shareShm(rid0, enc_publisher.getEID(), 7);
+  shm[0].shareShm(rid0, enc_subscriber.getEID(), 7);
+
+  rid_t rid1 = shm[1].createShm(0x1000);
+  shm[1].changeShm(rid1, 7);
+  shm[1].shareShm(rid1, enc_publisher.getEID(), 7);
+  shm[1].shareShm(rid1, enc_subscriber.getEID(), 7);
+  printf("[HOST] init_shm created rid %d and %d\n", rid0, rid1);
 }
 
 void *publisher_run(void *arg)
@@ -82,12 +88,13 @@ get_host_string()
   return longstr;
 }
 
-shm_t loan_shm()
+// id: id from configuration between host and eapp
+shm_t loan_shm(int id)
 {
   shm_t s;
-  s.rid = shm.getRID();
-  s.pa = (uintptr_t)shm.getPA();
-  s.size = shm.getSize();
+  s.rid = shm[id].getRID();
+  s.pa = (uintptr_t)shm[id].getPA();
+  s.size = shm[id].getSize();
   printf("[HOST] loan_shm rid: %d pa: %#lx size: %d\n", s.rid, s.pa, s.size);
   return s;
 }
