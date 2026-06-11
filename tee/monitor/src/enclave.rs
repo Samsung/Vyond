@@ -341,11 +341,11 @@ pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave
 }
 
 pub fn find_enclave<'a>(eid: usize) -> Option<&'a mut Enclave> {
-    if let Some(enclave) = unsafe { ENCLAVES[eid].as_mut() } {
-        return Some(enclave);
+    // Bounds check to prevent out-of-bounds access
+    if eid >= MAX_ENCLAVES {
+        return None;
     }
-
-    None
+    unsafe { ENCLAVES[eid].as_mut() }
 }
 
 /*
