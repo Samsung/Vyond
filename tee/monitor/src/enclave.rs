@@ -280,8 +280,6 @@ pub fn create_enclave<'a>(create_args: &KeystoneSBICreate) -> Result<&'a Enclave
     };
     let enclave: &mut Enclave = Enclave::allocate(pa_params)?;
 
-    // TODO: Check if create_args is valid
-
     // create a PMP region bound to the enclave
     if let Ok(region) = isolator::region_init(
         create_args.epm_region.paddr,
