@@ -26,7 +26,7 @@ pub mod trap;
 #[cfg(any(feature = "isolator_wg", feature = "isolator_hybrid"))]
 pub mod wg;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Error {
     Success = 0,
     Unknown = 100000,
@@ -59,6 +59,17 @@ pub enum Error {
     Overlap,
     NotSupported,
     Invalid,
+}
+
+impl Error {
+    /// Convert Error to isize for SBI return value
+    /// Success returns 0, errors return negative values
+    pub fn to_isize(&self) -> isize {
+        match self {
+            Error::Success => 0,
+            _ => -(*self as isize),
+        }
+    }
 }
 
 #[no_mangle]
