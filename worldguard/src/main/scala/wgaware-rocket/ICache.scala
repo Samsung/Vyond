@@ -245,6 +245,12 @@ class WGICacheModule(outer: WGICache) extends LazyModuleImp(outer)
   val s1_valid = RegInit(false.B)
   /** virtual address from CPU in stage 1. */
   val s1_vaddr = RegEnable(s0_vaddr, s0_valid)
+  // WID must be staged alongside the fetch (like s1_vaddr), NOT taken live from
+  // io.wid (= csr.io.wid, combinational on prv). A privilege flip (interrupt:
+  // M<->S) between s0 and s1 would otherwise pair the s1 fetch's tag with the
+  // new prv's wid -> spurious wid-miss -> refill stamps the line with the wrong
+  // WID -> later re-acquire deadlock (the same class of bug fixed in WGDCache).
+  val s1_wid = RegEnable(io.wid, s0_valid)
   /** tag hit vector to indicate hit which way. */
   val s1_tag_hit = Wire(Vec(nWays, Bool()))
   val s1_tag_only_hits = Wire(Vec(nWays, Bool()))
@@ -297,7 +303,7 @@ class WGICacheModule(outer: WGICache) extends LazyModuleImp(outer)
   /** AccessAckData, is refilling I$, it will block request from CPU. */
   val refill_one_beat = tl_out.d.fire && edge_out.hasData(tl_out.d.bits)
 
-  val refill_wid = RegEnable(io.wid, s1_valid && s1_can_request_refill)
+  val refill_wid = RegEnable(s1_wid, s1_valid && s1_can_request_refill)
   val refill_wid_miss_way = RegEnable(OHToUInt(s1_tag_only_hits), s1_valid && s1_can_request_refill)
   val refill_dueto_wid_miss = RegEnable(!s1_hit && s1_tag_only_hit, s1_valid && s1_can_request_refill)
 
@@ -404,7 +410,6 @@ class WGICacheModule(outer: WGICache) extends LazyModuleImp(outer)
   for (i <- 0 until nWays) {
     val s1_idx = index(s1_vaddr, io.s1_paddr)
     val s1_tag = io.s1_paddr >> pgUntagBits
-    val s1_wid = io.wid
     dontTouch(s1_tag)
     /** this way is used by scratchpad.
       * [[tag_array]] corrupted.

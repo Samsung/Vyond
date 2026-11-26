@@ -31,7 +31,8 @@ import freechips.rocketchip.util._
 
 import sifive.blocks.inclusivecache._
 
-class WGInclusiveCacheBankScheduler(params: InclusiveCacheParameters, widBits: Int) extends Module
+class WGInclusiveCacheBankScheduler(params: InclusiveCacheParameters, widBits: Int,
+  wgGuard: Option[WGCheckerParams] = None) extends Module
 {
   val io = IO(new Bundle {
     val in = Flipped(TLBundle(params.inner.bundle))
@@ -42,6 +43,8 @@ class WGInclusiveCacheBankScheduler(params: InclusiveCacheParameters, widBits: I
     // Control port
     val req = Flipped(Decoupled(new WGSinkXRequest(params, widBits)))
     val resp = Decoupled(new WGSourceXRequest(params, widBits))
+    // Memory-port checker rule state, present only with the eviction guard on.
+    val wgGuardState = wgGuard.map(cp => Input(WGCheckerState(cp)))
   })
   // Sinks and Sources except A don't need to have wid but they have in order to have the same WGFullRequest
   val sourceA = Module(new WGSourceA(params, widBits))
@@ -76,7 +79,7 @@ class WGInclusiveCacheBankScheduler(params: InclusiveCacheParameters, widBits: I
   val bankedStore = Module(new BankedStore(params))
   val requests = Module(new ListBuffer(ListBufferParameters(new WGQueuedRequest(params, widBits), 3*params.mshrs, params.secondary, false)))
   println(s"[l2cache] num mshrs: ${params.mshrs}")
-  val mshrs = Seq.fill(params.mshrs) { Module(new WGMSHR(params, widBits)) }    // 7
+  val mshrs = Seq.fill(params.mshrs) { Module(new WGMSHR(params, widBits, wgGuard.isDefined)) }    // 7
   val abc_mshrs = mshrs.init.init                                    // [0:4]
   val bc_mshr = mshrs.init.last                                      // [5]
   val c_mshr = mshrs.last                                            // [6]
@@ -247,7 +250,16 @@ class WGInclusiveCacheBankScheduler(params: InclusiveCacheParameters, widBits: I
     val will_reload = m.io.schedule.bits.reload && (may_pop || bypass)
     m.io.allocate.bits.viewAsSupertype(chiselTypeOf(requests.io.data)) := Mux(bypass, WireInit(new WGQueuedRequest(params, widBits), init = request.bits), requests.io.data)
     m.io.allocate.bits.set := m.io.status.bits.set
-    m.io.allocate.bits.wid := m.io.status.bits.wid
+    // `set` needs its own assignment because WGQueuedRequest has no set field --
+    // it is added by WGFullRequest -- and a reloading MSHR serves the same set by
+    // construction, so taking it from status is right.
+    //
+    // `wid` is NOT in that position. It *is* a WGQueuedRequest field, so the
+    // viewAsSupertype above already assigned it from the request being loaded,
+    // and overriding it with status would hand the new request the *previous*
+    // request's world. A reload happens when a second request lands on a set an
+    // MSHR is already working, and those two requests can come from different
+    // worlds.
     m.io.allocate.bits.repeat := m.io.allocate.bits.tag === m.io.status.bits.tag
     m.io.allocate.valid := sel && will_reload
   }
@@ -361,6 +373,33 @@ class WGInclusiveCacheBankScheduler(params: InclusiveCacheParameters, widBits: I
   sourceD.io.grant_req := sinkD  .io.grant_req
   sourceC.io.evict_safe := sourceD.io.evict_safe
   sinkD  .io.grant_safe := sourceD.io.grant_safe
+
+  // [WGL2EvictGuard] A Checker fed the memory-port checker's own rule state, so
+  // the answer the L2 acts on is the answer that checker would give. Inputs are
+  // driven at the eviction site below; tied off here so the module is complete.
+  val wgGuardCheckOpt = wgGuard.zip(io.wgGuardState).headOption.map { case (cp, st) =>
+    val chk = Module(new Checker(cp.nSlots, cp.paddrBits, cp.lgMaxSize,
+                                 cp.granularity, cp.lgAlign, cp.widWidth))
+    chk.io.mwid     := st.mwid
+    chk.io.wgc      := st.wgc
+    chk.io.slot0Cfg := st.slot0Cfg
+    // The directory result goes to exactly one MSHR per cycle, so one Checker
+    // serves them all: select the query belonging to whichever is being told.
+    chk.io.addr := Mux1H(directoryFanout, mshrs.map(_.io.wgGuardAddr.get))
+    chk.io.wid  := Mux1H(directoryFanout, mshrs.map(_.io.wgGuardWid.get))
+    chk.io.size := cp.lgMaxSize.U
+    dontTouch(chk.io.r)
+    dontTouch(chk.io.w)
+    chk
+  }
+
+  // A line may only be evicted for a requester allowed to both read and write
+  // the address: an evict-and-refill makes the line that requester's, so
+  // anything less would leave a line whose WID no slot admits (breaking I1).
+  mshrs.foreach { m =>
+    m.io.wgEvictDenied.foreach { _ :=
+      wgGuardCheckOpt.map(c => !(c.io.r && c.io.w)).getOrElse(false.B) }
+  }
 
   private def afmt(x: AddressSet) = s"""{"base":${x.base},"mask":${x.mask}}"""
   private def addresses = params.inner.manager.managers.flatMap(_.address).map(afmt _).mkString(",")

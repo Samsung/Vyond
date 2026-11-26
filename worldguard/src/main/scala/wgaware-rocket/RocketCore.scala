@@ -766,7 +766,7 @@ class WGRocket(tile: WGRocketTile)(implicit p: Parameters) extends CoreModule()(
     Mux(wb_xcpt || csr.io.eret, csr.io.evec, // exception or [m|s]ret
     Mux(replay_wb,              wb_reg_pc,   // replay
                                 mem_npc))    // flush or branch misprediction
-  io.imem.wid := csr.io.wid
+  io.imem.wid := csr.io.wid_if  // must follow the redirect, not the retiring privilege
   io.imem.flush_icache := wb_reg_valid && wb_ctrl.fence_i && !io.dmem.s2_nack
   io.imem.might_request := {
     imem_might_request_reg := ex_pc_valid || mem_pc_valid || io.ptw.customCSRs.disableICacheClockGate

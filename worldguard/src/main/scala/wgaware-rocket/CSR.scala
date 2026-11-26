@@ -89,6 +89,10 @@ class WGCSRFileIO(hasBeu: Boolean)(implicit p: Parameters) extends CoreBundle
   })
 
   val wid = Output(UInt(log2Ceil(p(NWorlds)).W))
+  // WID for the instruction-fetch path. Equals `wid` except on the cycle a
+  // trap or an [m|s]ret is taken, where it already reflects the privilege the
+  // redirect target will execute in. See the comment at its definition.
+  val wid_if = Output(UInt(log2Ceil(p(NWorlds)).W))
 }
 
 class WGCSRFile(
@@ -118,7 +122,7 @@ class WGCSRFile(
   require(nWorlds > 0)
   val widWidth      = log2Ceil(nWorlds)
   val reg_mwid      = RegInit((nWorlds-1).U(widWidth.W))          // mwid = nWorld - 1
-  val reg_mwidlist  = RegInit(~(1 << (nWorlds-1)).U(nWorlds.W))  // mwidlist = { x in Z || 0 <= x < mwid}   
+  val reg_mwidlist  = RegInit(~((BigInt(1) << (nWorlds-1)).U(nWorlds.W)))  // mwidlist = { x in Z || 0 <= x < mwid}; BigInt avoids Int overflow at nWorlds=32
   val reg_mlwid     = RegInit(~0.U(widWidth.W))                   // mlwid in mwidlist
   val reg_mwiddeleg = RegInit(0.U(nWorlds.W))                     // mwiddeleg in mwidlist \ {mlwid}
   val reg_slwid     = RegInit(~0.U(widWidth.W))                   // slwid in mwiddeleg
@@ -354,6 +358,24 @@ class WGCSRFile(
 
   io.wid := Mux(reg_mstatus.prv === PRV.M.U, reg_mwid,
     Mux(reg_mstatus.prv === PRV.S.U, reg_mlwid, Mux(reg_mwiddeleg === 0.U, reg_mlwid, reg_slwid)))
+
+  // The fetch path needs the WID of the privilege that will *execute* the
+  // instruction being fetched, not the one currently retiring. On the cycle a
+  // trap or an [m|s]ret is taken the core already drives the frontend with
+  // csr.io.evec (RocketCore: io.imem.req.bits.pc, Frontend: io.cpu.npc feeds
+  // icache s0 in that same cycle), but reg_mstatus.prv does not update until
+  // the end of it. Pairing that new PC with the old privilege's WID stamps the
+  // trap-vector cache line with the *previous* world's WID, so a WGC that
+  // denies that world silently kills every trap.
+  //
+  // `new_prv` is exactly the value reg_mstatus.prv is about to take: it is
+  // WireDefault(reg_mstatus.prv) and is only overridden inside the `exception`
+  // and `insn_ret` blocks, which are the only places privilege changes and both
+  // of which also drive io.evec. So outside a transition this is identical to
+  // io.wid, and the fetch WID always travels with the PC it belongs to.
+  private val prv_if = legalizePrivilege(new_prv)
+  io.wid_if := Mux(prv_if === PRV.M.U, reg_mwid,
+    Mux(prv_if === PRV.S.U, reg_mlwid, Mux(reg_mwiddeleg === 0.U, reg_mlwid, reg_slwid)))
 
   val isaMaskString =
     (if (usingMulDiv) "M" else "") +

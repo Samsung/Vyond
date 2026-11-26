@@ -42,12 +42,17 @@ case class WGMarkerParams(
   val postfix: String,
   val wid: Int,
   val widWidth: Int,
+  // World allowed to reconfigure this marker's own control registers (its `wid`/lock
+  // regs), independent of `wid` itself -- the value it stamps on the traffic it marks.
+  // Mirrors WGCheckerParams.mwid.
+  val mwid: Int,
 
   val address: BigInt,
   val size: Int
 ) extends DeviceParams {
-  require (widWidth == 2, "Current version supports only 4 world ids")
-  require (wid < 4, "wid cannot be greater than 3")
+  require (widWidth >= 1 && widWidth <= 5, "widWidth must be in [1,5] (up to 32 world ids)")
+  require (wid < (1 << widWidth), "wid must be representable in widWidth bits")
+  require (mwid < (1 << widWidth), "mwid must be representable in widWidth bits")
 }
 
 case class WGMarkerAttachParams(
@@ -102,7 +107,7 @@ case class WGMarkerAttachParams(
 
 
 class TLWGMarker(params: WGMarkerParams, beatBytes: Int)(implicit p: Parameters)
-extends WGMarker(params, beatBytes) with HasTLControlRegMap 
+extends WGMarker(params, beatBytes) with HasTLWGControlRegMap
 
 class WGMarker(params: WGMarkerParams, beatBytes: Int)(implicit p: Parameters) extends RegisterRouter(
   RegisterRouterParams(
@@ -111,7 +116,7 @@ class WGMarker(params: WGMarkerParams, beatBytes: Int)(implicit p: Parameters) e
     base = params.address,
     size = params.size,
     beatBytes = beatBytes))
-with HasInterruptSources with HasTLControlRegMap
+with HasInterruptSources with HasTLWGControlRegMap
 {
   //val device = new SimpleDevice("wgmarker", Seq("sr,worldguarld"))
   //val wgm_node= TLRegisterNode(
@@ -146,22 +151,29 @@ with HasInterruptSources with HasTLControlRegMap
       w
     })
 
+    // World allowed to reconfigure this marker's own control registers. Only
+    // meaningful when UseWGTLCustomField is on (i.e. controlNode.reqWid is
+    // defined); otherwise every write is treated as trusted, matching the
+    // pre-WGC behavior of this device.
+    val mwidReg = RegInit(params.mwid.U(params.widWidth.W))
+    val trusted = controlNode.reqWid.map(_ === mwidReg).getOrElse(true.B)
+
     val mapping = Seq(
       WGMCtrlReg.vendor -> Seq(RegField.r(vendorReg.getWidth, vendorReg)),
       WGMCtrlReg.impid -> Seq(RegField.r(impidReg.getWidth, impidReg)),
       WGMCtrlReg.wid -> Seq(RegField(widReg.getWidth,
         RegReadFn({ valid => (true.B, widReg) }),
-        RegWriteFn({(valid, data) => when (valid & !lockValidReg.l) { widReg := data }; true.B }))),
+        RegWriteFn({(valid, data) => when (valid & trusted & !lockValidReg.l) { widReg := data }; true.B }))),
       WGMCtrlReg.lockValid -> Seq(
         RegField(lockValidReg.l.getWidth,
           RegReadFn({ valid => (true.B, lockValidReg.l) }),
-          RegWriteFn({(valid, data) => when (valid & !lockValidReg.l) { lockValidReg.l := data }; true.B })),
+          RegWriteFn({(valid, data) => when (valid & trusted & !lockValidReg.l) { lockValidReg.l := data }; true.B })),
         RegField(lockValidReg.v.getWidth,
           RegReadFn({ valid => (true.B, lockValidReg.v) }),
-          RegWriteFn({(valid, data) => when (valid & !lockValidReg.l) { lockValidReg.v := data }; true.B })),
+          RegWriteFn({(valid, data) => when (valid & trusted & !lockValidReg.l) { lockValidReg.v := data }; true.B })),
         RegField(lockValidReg.res.getWidth,
           RegReadFn({ valid => (true.B, lockValidReg.res) }),
-          RegWriteFn({(valid, data) => when (valid) { lockValidReg.v := 0.U }; true.B }))
+          RegWriteFn({(valid, data) => when (valid & trusted) { lockValidReg.v := 0.U }; true.B }))
       )
     )
 

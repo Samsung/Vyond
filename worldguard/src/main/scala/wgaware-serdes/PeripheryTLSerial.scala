@@ -104,7 +104,10 @@ trait CanHaveWGPeripheryTLSerial { this: BaseSubsystem =>
         WGMarkerParams(
           postfix = s"wgtlserdes",
           wid = 3, // FIXME: 
-          widWidth = 2,
+          // Follow the build's world count instead of assuming 4 worlds, so this
+          // marker stamps a WID as wide as the rest of the system expects.
+          widWidth = log2Ceil(p(NWorlds)),
+          mwid = p(NWorlds) - 1,
           address = p(WGMarkerBaseAddressKey) + BigInt(0x100000 * 2), // FIXME: should be consider the number of other wgmarkers.
           size = 4096
         )

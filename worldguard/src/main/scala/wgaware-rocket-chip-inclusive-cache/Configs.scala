@@ -95,6 +95,17 @@ class WithWGAwareInclusiveCache(
       l2Ctrl,
       widBits = log2Ceil(p(NWorlds))))
 
+    // Park the eviction guard's sink where the memory-port checker can find
+    // it. The checker is built later, in a subsystem trait, so it makes the
+    // connection once it has both ends (see WGL2EvictGuard.scala).
+    l2.wgGuardSinkOpt.foreach { snk =>
+      context match {
+        case s: CanHaveWGL2EvictGuard => s.wgl2GuardSink = Some(snk)
+        case _ => require(false,
+          "WGL2EvictGuardKey is set but the subsystem does not mix in CanHaveWGL2EvictGuard")
+      }
+    }
+
     def skipMMIO(x: TLClientParameters) = {
       val dcacheMMIO =
         x.requestFifo &&

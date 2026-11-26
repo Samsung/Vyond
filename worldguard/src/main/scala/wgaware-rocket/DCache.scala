@@ -266,11 +266,11 @@ class WGDCacheModule(widWidth: Int, outer: WGDCache) extends WGHellaCacheModule(
       val s1_tag = s1_paddr >> tagLSB
       // replacement of mismatched wid
       //val s1_meta_hit_way = s1_meta_uncorrected.map(r => r.coh.isValid() && r.tag === s1_tag).asUInt
-      val s1_meta_hit_way = s1_meta_uncorrected.map(r => r.coh.isValid() && r.tag === s1_tag && Mux(s1_probe, true.B, r.wid === io.cpu.req.bits.wid)).asUInt
+      val s1_meta_hit_way = s1_meta_uncorrected.map(r => r.coh.isValid() && r.tag === s1_tag && Mux(s1_probe, true.B, r.wid === s1_req.wid)).asUInt
       val s1_meta_hit_state = (
         // replacement of mismatched wid
         //s1_meta_uncorrected.map(r => Mux(r.tag === s1_tag && !s1_flush_valid, r.coh.asUInt, 0.U))
-        s1_meta_uncorrected.map(r => Mux(r.tag === s1_tag && !s1_flush_valid && Mux(s1_probe, true.B, r.wid === io.cpu.req.bits.wid), r.coh.asUInt, 0.U))
+        s1_meta_uncorrected.map(r => Mux(r.tag === s1_tag && !s1_flush_valid && Mux(s1_probe, true.B, r.wid === s1_req.wid), r.coh.asUInt, 0.U))
         .reduce (_|_)).asTypeOf(chiselTypeOf(ClientMetadata.onReset))
 
 
@@ -301,6 +301,12 @@ class WGDCacheModule(widWidth: Int, outer: WGDCache) extends WGHellaCacheModule(
   val s2_tlb_xcpt = Reg(chiselTypeOf(tlb.io.resp))
   val s2_pma = Reg(chiselTypeOf(tlb.io.resp))
   val s2_uncached_resp_addr = Reg(chiselTypeOf(s2_req.addr)) // should be DCE'd in synthesis
+  // WorldGuard: sticky "this physical block's fill was permission-denied" latch, keyed
+  // by block address, used to turn the *next* access to it into a precise access fault
+  // instead of an endless retry loop. Set on a denied cached grant (see grant handling
+  // below); cleared as soon as a matching retry consumes it (see s2_wg_denied_match above).
+  val s2_wg_denied = RegInit(false.B)
+  val s2_wg_denied_block = Reg(UInt((paddrBits - blockOffBits).W))
   when (s1_valid_not_nacked || s1_flush_valid) {
     s2_req := s1_req
     s2_req.addr := s1_paddr
@@ -391,6 +397,16 @@ class WGDCacheModule(widWidth: Int, outer: WGDCache) extends WGHellaCacheModule(
   val s2_valid_uncached_pending = s2_valid_miss && s2_uncached && !uncachedInFlight.asUInt.andR
   val s2_victim_way = UIntToOH(RegEnable(s1_victim_way, s1_valid_not_nacked || s1_flush_valid))
 
+  // WorldGuard: this retry must fault instead of re-issuing the (permanently denied)
+  // Acquire again -- see the s2_wg_denied latch below, near the grant handling. Built
+  // only from s2_valid/s2_readwrite/s2_req, NOT from s2_valid_masked or s2_valid_miss:
+  // those are themselves gated off by io.cpu.s2_xcpt (see s2_valid_no_xcpt above), so
+  // depending on them here would create a combinational loop through the ae.ld/ae.st
+  // connect that drives io.cpu.s2_xcpt further down.
+  val s2_wg_denied_match = s2_valid && s2_readwrite && s2_wg_denied &&
+    s2_req.addr(paddrBits-1, blockOffBits) === s2_wg_denied_block
+  when (s2_wg_denied_match) { s2_wg_denied := false.B }
+
   //------------------------------------------------------
   // hit both tag/wid  | hit tag | operation
   //------------------------------------------------------
@@ -449,7 +465,7 @@ class WGDCacheModule(widWidth: Int, outer: WGDCache) extends WGHellaCacheModule(
   metaArb.io.in(2).bits.way_en := s2_victim_or_hit_way
   metaArb.io.in(2).bits.idx := s2_vaddr(idxMSB, idxLSB)
   metaArb.io.in(2).bits.addr := Cat(io.cpu.req.bits.addr >> untagBits, s2_vaddr(idxMSB, 0))
-  metaArb.io.in(2).bits.data := tECC.encode(WGL1Metadata(s2_req.addr >> tagLSB, s2_new_hit_state, io.cpu.req.bits.wid).asUInt)
+  metaArb.io.in(2).bits.data := tECC.encode(WGL1Metadata(s2_req.addr >> tagLSB, s2_new_hit_state, s2_req.wid).asUInt)
 
   // load reservations and TL error reporting
   val s2_lr = (usingAtomics && !usingDataScratchpad).B && s2_req.cmd === M_XLR
@@ -670,6 +686,12 @@ class WGDCacheModule(widWidth: Int, outer: WGDCache) extends WGHellaCacheModule(
         grantInProgress := false.B
         blockProbeAfterGrantCount := (blockProbeAfterGrantCycles - 1).U
         replacer.miss
+        // WorldGuard: remember a denied fill so the next matching access faults
+        // instead of retrying (see s2_wg_denied_match above).
+        when (tl_out.d.bits.denied) {
+          s2_wg_denied := true.B
+          s2_wg_denied_block := s2_req.addr(paddrBits-1, blockOffBits)
+        }
       }
     } .elsewhen (grantIsUncached) {
       (uncachedRespIdxOH.asBools zip uncachedInFlight) foreach { case (s, f) =>
@@ -714,7 +736,13 @@ class WGDCacheModule(widWidth: Int, outer: WGDCache) extends WGHellaCacheModule(
     tl_out.d.ready := false.B
   }
   if (!usingDataScratchpad) {
-    dataArb.io.in(1).bits.write := true.B
+    // WorldGuard: a denied grant must never be planted into the data array -- the
+    // way it would land in still holds a *different*, previously-valid line (its tag
+    // is deliberately left untouched below, see the metaArb.io.in(3).valid guard), so
+    // writing here would silently corrupt that unrelated address. Downgrade to a
+    // (discarded) read instead of skipping the arbiter slot outright, so the existing
+    // ready/valid backpressure timing to tl_out.d is unchanged.
+    dataArb.io.in(1).bits.write := !tl_out.d.bits.denied
     dataArb.io.in(1).bits.addr :=  (s2_vaddr >> idxLSB) << idxLSB | d_address_inc
     dataArb.io.in(1).bits.way_en := refill_way
     dataArb.io.in(1).bits.wdata := tl_d_data_encoded
@@ -733,7 +761,7 @@ class WGDCacheModule(widWidth: Int, outer: WGDCache) extends WGHellaCacheModule(
   metaArb.io.in(3).bits.way_en := refill_way
   metaArb.io.in(3).bits.idx := s2_vaddr(idxMSB, idxLSB)
   metaArb.io.in(3).bits.addr := Cat(io.cpu.req.bits.addr >> untagBits, s2_vaddr(idxMSB, 0))
-  metaArb.io.in(3).bits.data := tECC.encode(WGL1Metadata(s2_req.addr >> tagLSB, s2_hit_state.onGrant(s2_req.cmd, tl_out.d.bits.param), io.cpu.req.bits.wid).asUInt)
+  metaArb.io.in(3).bits.data := tECC.encode(WGL1Metadata(s2_req.addr >> tagLSB, s2_hit_state.onGrant(s2_req.cmd, tl_out.d.bits.param), s2_req.wid).asUInt)
 
   if (!cacheParams.separateUncachedResp) {
     // don't accept uncached grants if there's a structural hazard on s2_data...
@@ -923,6 +951,17 @@ class WGDCacheModule(widWidth: Int, outer: WGDCache) extends WGHellaCacheModule(
 
   val s1_xcpt_valid = tlb.io.req.valid && !s1_isSlavePortAccess && !s1_nack
   io.cpu.s2_xcpt := Mux(RegNext(s1_xcpt_valid), s2_tlb_xcpt, 0.U.asTypeOf(s2_tlb_xcpt))
+  // WorldGuard: turn a retry of a previously-denied physical address into a precise
+  // access fault on the faulting instruction itself, rather than letting it fall
+  // through to another (permanently futile) miss/Acquire. Setting this also, as a
+  // side effect, drives s2_valid_no_xcpt (above) false for this cycle, which
+  // transitively suppresses s2_valid_miss/s2_valid_cached_miss/io.cpu.s2_nack --
+  // exactly the same mechanism an ordinary TLB exception already relies on, so no
+  // separate nack/replay suppression is needed here.
+  when (s2_wg_denied_match) {
+    io.cpu.s2_xcpt.ae.ld := s2_read
+    io.cpu.s2_xcpt.ae.st := s2_write
+  }
 
   if (usingDataScratchpad) {
     assert(!(s2_valid_masked && s2_req.cmd.isOneOf(M_XLR, M_XSC)))
