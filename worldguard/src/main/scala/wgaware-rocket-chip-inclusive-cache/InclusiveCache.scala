@@ -46,6 +46,13 @@ class WGInclusiveCache(
   val xfer = TransferSizes(cache.blockBytes, cache.blockBytes)
   val atom = TransferSizes(1, cache.beatBytes)
 
+  // Memory-port checker rule state, used to decide whether a cross-WID victim
+  // may be evicted on the requester's behalf (see WGL2EvictGuard.scala).
+  // The subsystem connects this; absent unless the guard is enabled.
+  val wgGuardSinkOpt =
+    if (p(WGL2EvictGuardKey)) Some(BundleBridgeSink[WGCheckerState]()) else None
+  val wgGuardParams = WGMemPortCheckerParams(p)
+
   var resourcesOpt: Option[ResourceBindings] = None
 
   val device: SimpleDevice = new SimpleDevice("cache-controller", Seq("sifive,inclusivecache0", "cache")) {
@@ -145,7 +152,10 @@ class WGInclusiveCache(
       }
 
       val params = InclusiveCacheParameters(cache, micro, !ctrls.isEmpty, edgeIn, edgeOut)
-      val scheduler = Module(new WGInclusiveCacheBankScheduler(params, widBits)).suggestName("inclusive_cache_bank_sched")
+      val scheduler = Module(new WGInclusiveCacheBankScheduler(params, widBits,
+        wgGuardSinkOpt.map(_ => wgGuardParams))).suggestName("inclusive_cache_bank_sched")
+      // Every bank sees the same rule state; the checker is one instance.
+      (scheduler.io.wgGuardState zip wgGuardSinkOpt).foreach { case (st, snk) => st := snk.bundle }
 
       scheduler.io.in <> in
       out <> scheduler.io.out
@@ -183,7 +193,10 @@ class WGInclusiveCache(
 
         sched.io.req.valid := contained && ctrl.module.io.flush_req.valid
         sched.io.req.bits.address := ctrl.module.io.flush_req.bits
-        sched.io.req.bits.wid := 0.U // FIXME: Temporarily set wid to 0
+        // SW-selectable flush WID (FlushWid control reg). A flush issued under the WID that
+        // owns the dirty lines is a clean same-WID hit; wid=0 over WID-tagged lines takes the
+        // heavy cross-WID onlyTagHit path (the per-enclave EPM-flush storm).
+        sched.io.req.bits.wid := ctrl.module.io.flush_wid(widBits - 1, 0)
         when (contained && sched.io.req.ready) { ctrl.module.io.flush_req.ready := true.B }
 
         when (sched.io.resp.valid) { ctrl.module.io.flush_resp := true.B }

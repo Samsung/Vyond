@@ -169,19 +169,23 @@ class WGDirectory(params: InclusiveCacheParameters, widBits: Int) extends Module
   //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
   // hit | onlyTagHit | bypassHit  | bypassOnlyTagHit | wayMatch | result.bits               | result.bits.hit | result.bits.onlyTagHit | result.bits.wid          | result.bits.way
   //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  //  X  |     X      |     0      |        1         |    0     | ways(victimWay)           |      0          | 0                      |       wid                | victimWay 
-  //  X  |     X      |     1      |        1         |    1     | bypass.data               |      0          | 0                      |       wid                | victimWay
-  //  X  |     X      |     0      |        1         |    X     | bypass.data               |      bypassHit  | bypassOnlyTagHit       |       bypass.data.wid    | bypass.way
-  //  X  |     X      |     1      |        1         |    X     | bypass.data               |      bypassHit  | bypassOnlyTagHit       |       wid                | bypass.way
-  //  0  |     1      |     X      |        0         |    X     | Mux1H (onlyTagHits, ways) |      hit        | onlyTagHit             | Mux1H(onlyTagHits, ways) | OHToUInt(onlyTagHits)
-  //  1  |     1      |     X      |        0         |    X     | Mux1H (hits, ways)        |      hit        | onlyTagHit             |       wid                | OHToUInt(hits)
+  //  X  |     X      |     0      |        1         |    0     | ways(victimWay)           |      0          | 0                      |       ways(victimWay).wid | victimWay
+  //  X  |     X      |     1      |        1         |    1     | bypass.data               |      0          | 0                      |       bypass.data.wid     | victimWay
+  //  X  |     X      |     0      |        1         |    X     | bypass.data               |      bypassHit  | bypassOnlyTagHit       |       bypass.data.wid     | bypass.way
+  //  X  |     X      |     1      |        1         |    X     | bypass.data               |      bypassHit  | bypassOnlyTagHit       |       bypass.data.wid     | bypass.way
+  //  0  |     1      |     X      |        0         |    X     | Mux1H (onlyTagHits, ways) |      hit        | onlyTagHit             | Mux1H(onlyTagHits, ways)  | OHToUInt(onlyTagHits)
+  //  1  |     1      |     X      |        0         |    X     | Mux1H (hits, ways)        |      hit        | onlyTagHit             |       Mux1H(hits, ways).wid | OHToUInt(hits)
   //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
   io.result.valid := ren2
   // replacement of mismatched wid
   //io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(setQuash && (tagMatch || wayMatch), bypass.data, Mux1H(victimWayOH, ways)))
   //io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(onlyTagHit, Mux1H(onlyTagHits, ways), Mux(setQuash && (tagMatch || wayMatch), bypass.data, Mux1H(victimWayOH, ways))))
   //io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(onlyTagHit, Mux1H(onlyTagHits, ways), Mux( bypassHit || bypassOnlyTagHit || wayMatch, bypass.data, Mux1H(victimWayOH, ways))))
-  io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := Mux(hit, Mux1H(hits, ways), Mux(onlyTagHit, Mux1H(onlyTagHits, ways), Mux( setQuash && ((tagMatch && bypass.wid === wid) || tagMatch || wayMatch), bypass.data, Mux1H(victimWayOH, ways))))  // Rewrite the above logic to avoid timing violation.
+  // One selector, used for every field of the reported entry including `wid`.
+  // Splitting `wid` out from the rest is what broke the writeback path: see the
+  // note above io.result.bits.wid below.
+  val resultEntry = Mux(hit, Mux1H(hits, ways), Mux(onlyTagHit, Mux1H(onlyTagHits, ways), Mux( setQuash && ((tagMatch && bypass.wid === wid) || tagMatch || wayMatch), bypass.data, Mux1H(victimWayOH, ways))))  // Rewrite the above logic to avoid timing violation.
+  io.result.bits.viewAsSupertype(chiselTypeOf(bypass.data)) := resultEntry
 
 
   //io.result.bits.hit := hit || (setQuash && tagMatch && bypass.data.state =/= INVALID)
@@ -193,7 +197,7 @@ class WGDirectory(params: InclusiveCacheParameters, widBits: Int) extends Module
   io.result.bits.way := Mux(hit, OHToUInt(hits), Mux(onlyTagHit, OHToUInt(onlyTagHits), Mux(setQuash && tagMatch, bypass.way, victimWay)))
   
   //io.result.bits.wid := Mux(hit, wid, Mux(onlyTagHit, Mux1H(onlyTagHits, ways).wid, wid))
-  io.result.bits.wid := Mux(onlyTagHit, Mux1H(onlyTagHits, ways).wid, Mux(bypassOnlyTagHit, bypass.data.wid, wid))
+  io.result.bits.wid := resultEntry.wid
 
   // When the request comes from SinkC (prio 2) and tag matched, wid must be matched
   when (io.result.valid && prio(2) && (opcode === Release|| opcode === ReleaseData) && onlyTagHit) {

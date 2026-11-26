@@ -87,6 +87,7 @@ class WGSinkA(params: InclusiveCacheParameters, widBits: Int) extends Module
   io.req.bits.set    := set
   io.req.bits.tag    := tag
   io.req.bits.put    := put
+  io.req.bits.wid    := 0.U  // default WID0 when no WG custom field (non-WG config); foreach overrides
   a.bits.user.lift(WGTLCustomFieldKey).foreach { x =>
     io.req.bits.wid := x.wid
   }

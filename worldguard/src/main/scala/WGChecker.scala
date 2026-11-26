@@ -36,7 +36,11 @@ case class WGCheckerParams(
   paddrBits: Int    = 64,
   lgMaxSize: Int    = 3,   // 2^3=8bytes
   granularity: Int  = 4,   // 4bytes
-  lgAlign: Int      = 2    // 2^2=4bytes
+  lgAlign: Int      = 2,   // 2^2=4bytes
+  // Publish this checker's rule state so the L2 can consult it before a
+  // cross-WID eviction (see WGL2EvictGuard.scala). Only the memory-port
+  // checker sets this; the others are not on the eviction path.
+  exportState: Boolean = false
 ) extends DeviceParams
 
 case class WGCheckerAttachParams(
@@ -88,7 +92,7 @@ case class WGCheckerAttachParams(
 }
 
 class TLWGChecker(params: WGCheckerParams, beatBytes: Int)(implicit p: Parameters)
-extends WGChecker(params, beatBytes) with HasTLControlRegMap
+extends WGChecker(params, beatBytes) with HasTLWGControlRegMap
 
 class WGChecker(params: WGCheckerParams, beatBytes: Int)(implicit p: Parameters)
 extends RegisterRouter(
@@ -98,7 +102,7 @@ extends RegisterRouter(
     base = params.address,
     size = params.size,
     beatBytes = beatBytes))
-with HasInterruptSources with HasTLControlRegMap 
+with HasInterruptSources with HasTLWGControlRegMap
 {
   def nInterrupts = 1 
 
@@ -116,6 +120,12 @@ with HasInterruptSources with HasTLControlRegMap
     }
   ) 
 
+  // Rule state for the L2's eviction guard. Absent unless asked for, so builds
+  // without the guard keep exactly the hierarchy they have today.
+  val guardSourceOpt =
+    if (params.exportState) Some(BundleBridgeSource(() => WGCheckerState(params)))
+    else None
+
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
 
@@ -127,7 +137,7 @@ with HasInterruptSources with HasTLControlRegMap
     val impidReg                  = RegInit(0.U(16.W))
     val nSlotsReg                 = RegInit(params.nSlots.U(32.W))
     val errorCauseSlotWidRWReg    = RegInit({
-      val w = Wire(new WGCErrorCauseSlotWidRW)
+      val w = Wire(new WGCErrorCauseSlotWidRW(params.widWidth))
       w.res15_10  := 0.U
       w.at        := 0.U
       w.res7_2    := 0.U
@@ -142,6 +152,26 @@ with HasInterruptSources with HasTLControlRegMap
       w
     })
     val errorAddrReg              = RegInit(0.U(64.W)) // why is it 32 bit ? phsicall address space is 64(47) bits...
+
+    // Spec 3.1.3/3.1.5 slot[0]: addr/perm/cfg.a are hardwired constants (first
+    // byte of the checker's guarded range, no permissions, OFF), never part of
+    // the nSlots matchable-rule array (params.nSlots doesn't count it, and it is
+    // NOT included in wgchecker.io.wgc below). Only cfg.{er,ew,ir,iw,l} are real,
+    // writable state: they set the fallback report policy for an access that
+    // doesn't hit any real slot (a "hole"), separately from the policy a real,
+    // denying slot reports for its own hits (see Checker.io.cfg's Mux).
+    val slot0CfgReg                = RegInit({
+      val w = Wire(new WGCConfig)
+      w.l         := false.B
+      w.res30_12  := 0.U
+      w.iw        := false.B
+      w.ir        := false.B
+      w.ew        := false.B
+      w.er        := false.B
+      w.res7_2    := 0.U
+      w.a         := 0.U
+      w
+    })
 
     val wgcReg                    = RegInit(VecInit(Seq.fill(params.nSlots) {
       val w = Wire(new WGCReg(params.paddrBits, params.granularity, params.lgAlign))
@@ -159,8 +189,19 @@ with HasInterruptSources with HasTLControlRegMap
     }))
 
     //------------------------------------------------------------------------------------
+    // Only the trusted world (mwid) may write this checker's own configuration.
+    // controlNode is a WGTLRegisterNode (see WGRegisterRouter.scala), so its "a" channel
+    // carries WGTLCustomFieldKey and reqWid names the requester of the transaction the
+    // regmap machinery is servicing *this cycle*. concurrency defaults to 0 (unset below,
+    // and RegisterRouterParams itself defaults to 0), so there is no queue between the "a"
+    // channel and the RegField write it triggers -- reqWid always names the write actually
+    // being committed, never a later, unrelated request. If UseWGTLCustomField is off there
+    // is no WID to check at all, so every write is trusted (matches pre-WGC behavior).
+    //------------------------------------------------------------------------------------
+    val trusted = controlNode.reqWid.map(_ === mwidReg).getOrElse(true.B)
+
+    //------------------------------------------------------------------------------------
     // Register Mapping
-    // TODO: Check permission to access WGC Registers 
     //------------------------------------------------------------------------------------
     val mapping = Seq(
       WGCCtrlReg.vendor -> Seq(RegField.r(vendorReg.getWidth, vendorReg, RegFieldDesc("VENDOR", "", volatile=true))),
@@ -174,23 +215,60 @@ with HasInterruptSources with HasTLControlRegMap
       WGCCtrlReg.errorCauseSlotBeIp -> Seq(
         RegField(errorCauseSlotBeIpReg.res29_0.getWidth,
           RegReadFn({ valid => (true.B, errorCauseSlotBeIpReg.res29_0) }),
-          RegWriteFn({(valid, data) => when (valid) { errorCauseSlotBeIpReg.res29_0 := 0.U }; true.B }),
+          RegWriteFn({(valid, data) => when (valid && trusted) { errorCauseSlotBeIpReg.res29_0 := 0.U }; true.B }),
           RegFieldDesc("Reserved", "", volatile=true)),
         RegField(errorCauseSlotBeIpReg.b.getWidth, errorCauseSlotBeIpReg.b, RegFieldDesc("Bus_Error_Generated", "", volatile=true)),
         RegField(errorCauseSlotBeIpReg.i.getWidth, errorCauseSlotBeIpReg.i, RegFieldDesc("Interrupt_Generate", "", volatile=true))),
       WGCCtrlReg.errorAddr -> Seq(RegField.r(errorAddrReg.getWidth, errorAddrReg, RegFieldDesc("ERROR_ADDR", "", volatile=true))),
     )
 
+    // Spec slot[0]: addr/perm/cfg.a/cfg.res are fixed, read-only (any write is
+    // silently dropped, same as reading a RegField with no RegWriteFn); only
+    // cfg.{er,ew,ir,iw,l} are real registers, gated exactly like every other
+    // slot's fields (trusted + not-yet-locked to write, l itself only needs
+    // trusted). Field widths/order mirror wgcRegMap's cfg word below exactly so
+    // the two slots share the same 0x20-stride layout, just at index 0.
+    val slot0RegMap: Seq[RegField.Map] = Seq(
+      WGCCtrlReg.slotBase -> Seq(RegField.r(wgcReg(0).addr.getWidth, 0.U(wgcReg(0).addr.getWidth.W),
+        RegFieldDesc("wgcReg_slot0_Addr", "", volatile=true))),
+      WGCCtrlReg.slotBase + 0x8 -> Seq(RegField.r(64, 0.U(64.W),
+        RegFieldDesc("wgcReg_slot0_Perm", "", volatile=true))),
+      WGCCtrlReg.slotBase + 0x10 -> Seq(
+        RegField.r(2, 0.U(2.W), RegFieldDesc("wgcReg_slot0_Cfg.a", "", volatile=true)),
+        RegField.r(6, 0.U(6.W), RegFieldDesc("wgcReg_slot0_Cfg.res", "", volatile=true)),
+        RegField(slot0CfgReg.er.getWidth,
+          RegReadFn({ valid => (true.B, slot0CfgReg.er) }),
+          RegWriteFn({(valid, data) => when (valid && trusted && !slot0CfgReg.l) { slot0CfgReg.er := data }; true.B }),
+          RegFieldDesc("wgcReg_slot0_Cfg.er", "", volatile=true)),
+        RegField(slot0CfgReg.ew.getWidth,
+          RegReadFn({ valid => (true.B, slot0CfgReg.ew) }),
+          RegWriteFn({(valid, data) => when (valid && trusted && !slot0CfgReg.l) { slot0CfgReg.ew := data }; true.B }),
+          RegFieldDesc("wgcReg_slot0_Cfg.ew", "", volatile=true)),
+        RegField(slot0CfgReg.ir.getWidth,
+          RegReadFn({ valid => (true.B, slot0CfgReg.ir) }),
+          RegWriteFn({(valid, data) => when (valid && trusted && !slot0CfgReg.l) { slot0CfgReg.ir := data }; true.B }),
+          RegFieldDesc("wgcReg_slot0_Cfg.ir", "", volatile=true)),
+        RegField(slot0CfgReg.iw.getWidth,
+          RegReadFn({ valid => (true.B, slot0CfgReg.iw) }),
+          RegWriteFn({(valid, data) => when (valid && trusted && !slot0CfgReg.l) { slot0CfgReg.iw := data }; true.B }),
+          RegFieldDesc("wgcReg_slot0_Cfg.iw", "", volatile=true)),
+        RegField.r(19, 0.U(19.W), RegFieldDesc("wgcReg_slot0_Cfg.res2", "", volatile=true)),
+        RegField(slot0CfgReg.l.getWidth,
+          RegReadFn({ valid => (true.B, slot0CfgReg.l) }),
+          RegWriteFn({(valid, data) => when (valid && trusted && !slot0CfgReg.l) { slot0CfgReg.l := data }; true.B }),
+          RegFieldDesc("wgcReg_slot0_Cfg.l", "", volatile=true)))
+    )
+
     val wgcRegMap = wgcReg.zipWithIndex.map { case (r, i) =>
       val m: Seq[RegField.Map] = Seq(
         WGCCtrlReg.slotBase + 0x20 * (i+1) -> Seq(RegField(r.addr.getWidth,
           RegReadFn({ valid => (true.B, r.addr) }),
-          RegWriteFn({(valid, data) => when (valid && !r.cfg.l) { r.addr := data }; true.B }),
+          RegWriteFn({(valid, data) => when (valid && trusted && !r.cfg.l) { r.addr := data }; true.B }),
           RegFieldDesc(s"wgcReg_${i}_Addr", "", volatile=true))),
         WGCCtrlReg.slotBase + 0x20 * (i+1) + 0x8 -> Seq(RegField(r.perm.getWidth,
           RegReadFn({ valid => (true.B, r.perm) }),
           RegWriteFn({ (valid, data) =>
-            when (valid) {
+            when (valid && trusted && !r.cfg.l) {
               r.perm := data | (3.U << mwidReg * 2.U)
             }
             true.B
@@ -199,40 +277,48 @@ with HasInterruptSources with HasTLControlRegMap
         WGCCtrlReg.slotBase + 0x20 * (i+1) + 0x10 -> Seq(
           RegField(r.cfg.a.getWidth,
             RegReadFn({ valid => (true.B, r.cfg.a) }),
-            RegWriteFn({(valid, data) => when (valid && !r.cfg.l) { r.cfg.a := data }; true.B }),
+            RegWriteFn({(valid, data) => when (valid && trusted && !r.cfg.l) { r.cfg.a := data }; true.B }),
             RegFieldDesc(s"wgcReg_${i}_Cfg.a",  "", volatile=true)),  // <<--- make it read only after testing is done
           RegField(r.cfg.res7_2.getWidth,
             RegReadFn({ valid => (true.B, r.cfg.res7_2) }),
-            RegWriteFn({(valid, data) => when (valid) { r.cfg.res7_2 := 0.U }; true.B}),
+            RegWriteFn({(valid, data) => when (valid && trusted) { r.cfg.res7_2 := 0.U }; true.B}),
             RegFieldDesc(s"wgcReg_${i}_Cfg.res","", volatile=true)),
           RegField(r.cfg.er.getWidth,
             RegReadFn({ valid => (true.B, r.cfg.er) }),
-            RegWriteFn({(valid, data) => when (valid && !r.cfg.l) { r.cfg.er := data }; true.B }),
+            RegWriteFn({(valid, data) => when (valid && trusted && !r.cfg.l) { r.cfg.er := data }; true.B }),
             RegFieldDesc(s"wgcReg_${i}_Cfg.er", "", volatile=true)),
           RegField(r.cfg.ew.getWidth,
             RegReadFn({ valid => (true.B, r.cfg.ew) }),
-            RegWriteFn({(valid, data) => when (valid && !r.cfg.l) { r.cfg.ew := data }; true.B }),
+            RegWriteFn({(valid, data) => when (valid && trusted && !r.cfg.l) { r.cfg.ew := data }; true.B }),
             RegFieldDesc(s"wgcReg_${i}_Cfg.ew", "", volatile=true)),
           RegField(r.cfg.ir.getWidth,
             RegReadFn({ valid => (true.B, r.cfg.ir) }),
-            RegWriteFn({(valid, data) => when (valid && !r.cfg.l) { r.cfg.ir := data }; true.B }),
+            RegWriteFn({(valid, data) => when (valid && trusted && !r.cfg.l) { r.cfg.ir := data }; true.B }),
             RegFieldDesc(s"wgcReg_${i}_Cfg.ir", "", volatile=true)),
           RegField(r.cfg.iw.getWidth,
             RegReadFn({ valid => (true.B, r.cfg.iw) }),
-            RegWriteFn({(valid, data) => when (valid && !r.cfg.l) { r.cfg.iw := data }; true.B }),
+            RegWriteFn({(valid, data) => when (valid && trusted && !r.cfg.l) { r.cfg.iw := data }; true.B }),
             RegFieldDesc(s"wgcReg_${i}_Cfg.iw", "", volatile=true)),
           RegField(r.cfg.res30_12.getWidth,
             RegReadFn({ valid => (true.B, r.cfg.res30_12) }),
-            RegWriteFn({(valid, data) => when (valid) { r.cfg.res30_12 := 0.U }; true.B}),
+            RegWriteFn({(valid, data) => when (valid && trusted) { r.cfg.res30_12 := 0.U }; true.B}),
             RegFieldDesc(s"wgcReg_${i}_Cfg.res","", volatile=true)),
           RegField(r.cfg.l.getWidth,
             RegReadFn({ valid => (true.B, r.cfg.l) }),
-            RegWriteFn({(valid, data) => when (valid && !r.cfg.l) { r.cfg.l := data }; true.B }),
+            RegWriteFn({(valid, data) => when (valid && trusted && !r.cfg.l) { r.cfg.l := data }; true.B }),
             RegFieldDesc(s"wgcReg_${i}_Cfg.l",  "", volatile=true)))
       )
       m
     }
-    regmap(mapping ++ wgcRegMap.flatten.toSeq:_*)
+    regmap(mapping ++ slot0RegMap ++ wgcRegMap.flatten.toSeq:_*)
+
+    // Publish the rule state for the L2's eviction guard. Same expansion the
+    // Checker instance below is given, so the two cannot drift apart.
+    guardSourceOpt.foreach { src =>
+      src.bundle.mwid     := mwidReg
+      src.bundle.wgc      := VecInit(wgcReg.map(WGC(_, params.paddrBits, params.granularity, params.lgAlign)))
+      src.bundle.slot0Cfg := slot0CfgReg
+    }
 
     (wgc_node.in zip wgc_node.out) foreach {
       case ((in, edgeIn), (out, edgeOut)) => {
@@ -241,6 +327,7 @@ with HasInterruptSources with HasTLControlRegMap
         val wgchecker = Module(new Checker(params.nSlots, params.paddrBits, params.lgMaxSize, params.granularity, params.lgAlign, params.widWidth))
         wgchecker.io.mwid := mwidReg
         wgchecker.io.wgc  := wgcReg.map(WGC(_, params.paddrBits, params.granularity, params.lgAlign))
+        wgchecker.io.slot0Cfg := slot0CfgReg
 
         // IO between wgchecker and Bundle A
         wgchecker.io.size := in.a.bits.size
@@ -284,11 +371,11 @@ with HasInterruptSources with HasTLControlRegMap
         //------------------------------------------------------------------------------------
         when (in.a.valid && !allow && a_first) {
           errorAddrReg            := in.a.bits.address
-          errorCauseSlotWidRWReg  := Cat(0.U(6.W), w, r, 0.U(6.W), wid).asTypeOf(new WGCErrorCauseSlotWidRW)
+          errorCauseSlotWidRWReg  := Cat(0.U(6.W), w, r, 0.U((8 - params.widWidth).W), wid).asTypeOf(new WGCErrorCauseSlotWidRW(params.widWidth))
           errorCauseSlotBeIpReg   := Cat(ir | iw, er | ew, 0.U(30.W)).asTypeOf(new WGCErrorCauseSlotBeIp)
         } .elsewhen (in.a.valid && allow) {
           errorAddrReg            := 0.U(errorAddrReg.getWidth.W)
-          errorCauseSlotWidRWReg  := 0.U.asTypeOf(new WGCErrorCauseSlotWidRW)
+          errorCauseSlotWidRWReg  := 0.U.asTypeOf(new WGCErrorCauseSlotWidRW(params.widWidth))
           errorCauseSlotBeIpReg   := 0.U.asTypeOf(new WGCErrorCauseSlotBeIp)
         }
 

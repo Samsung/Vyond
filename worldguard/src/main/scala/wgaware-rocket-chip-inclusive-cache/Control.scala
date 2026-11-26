@@ -47,7 +47,14 @@ class WGInclusiveCacheControl(outer: WGInclusiveCache, control: InclusiveCacheCo
       val flush_match = Input(Bool())
       val flush_req = Decoupled(UInt(64.W))
       val flush_resp = Input(Bool())
+      // WID applied to subsequent flush requests. SW writes it before issuing a flush so
+      // the flush hits the owning WID's lines (clean same-WID hit) instead of taking the
+      // heavy cross-WID onlyTagHit path. Default 0 preserves the legacy behavior.
+      val flush_wid = Output(UInt(8.W))
     })
+    // WID for flush requests (see io.flush_wid). RW via the FlushWid control register.
+    val flushWid = RegInit(0.U(8.W))
+    io.flush_wid := flushWid
     // Flush directive
     val flushInValid   = RegInit(false.B)
     val flushInAddress = Reg(UInt(64.W))
@@ -90,9 +97,13 @@ class WGInclusiveCacheControl(outer: WGInclusiveCache, control: InclusiveCacheCo
     val lgBlockBytesR = RegField.r(8, log2Ceil(outer.cache.blockBytes).U, RegFieldDesc("lgBlockBytes",
       "Base-2 logarithm of the bytes per cache block", reset=Some(log2Ceil(outer.cache.blockBytes))))
 
+    val flushWidField = RegField(8, flushWid, RegFieldDesc("FlushWid",
+      "WID applied to subsequent flush requests (0 = legacy cross-WID behavior)"))
+
     val regmap = ctrlnode.regmap(
       0x000 -> RegFieldGroup("Config", Some("Information about the Cache Configuration"), Seq(banksR, waysR, lgSetsR, lgBlockBytesR)),
       0x200 -> (if (control.beatBytes >= 8) Seq(flush64) else Nil),
+      0x218 -> Seq(flushWidField),
       0x240 -> Seq(flush32)
     )
   }

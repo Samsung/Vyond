@@ -27,8 +27,16 @@ import worldguard.rocket._
 
 case object NWorlds extends Field[Int](4)
 
+// Slot count for the DRAM memory-port checker. WithWorldGuard's nSlots only
+// reached the peripheral checkers, never the memory-port one, so a 16-slot
+// build still came out with 8 slots on the only checker that actually uses
+// them -- the memory-port checker is where the Security Monitor allocates and
+// frees slots.
+case object NWGSlots extends Field[Int](8)
+
 class WithWorldGuard(nWorlds: Int, nSlots: Int) extends Config((site, here, up) => {
   case NWorlds => nWorlds
+  case NWGSlots => nSlots
   case UseWGTLCustomField => true
   case WGMarkerBaseAddressKey => BigInt(0x2100000)
   case WGPeripheryKey=> {
@@ -42,7 +50,7 @@ class WithWorldGuard(nWorlds: Int, nSlots: Int) extends Config((site, here, up) 
         postfix = "wgpexample",
         mwid      = nWorlds - 1,
         widWidth  = log2Ceil(nWorlds),
-        nSlots    = nSlots,
+        nSlots    = 2,
         address   = 0x6005000,
         size      = 4096)
       )
@@ -57,7 +65,7 @@ class WithWorldGuard(nWorlds: Int, nSlots: Int) extends Config((site, here, up) 
         postfix = "wgpplic",
         mwid      = nWorlds - 1,
         widWidth  = log2Ceil(nWorlds),
-        nSlots    = nSlots,
+        nSlots    = 2,
         address   = 0x6003000,
         size      = 4096)
       )
@@ -70,7 +78,7 @@ class WithWorldGuard(nWorlds: Int, nSlots: Int) extends Config((site, here, up) 
         postfix = "wgpbootrom",
         mwid      = nWorlds - 1,
         widWidth  = log2Ceil(nWorlds),
-        nSlots    = nSlots,
+        nSlots    = 2,
         address   = 0x6004000,
         size      = 4096)
     )
@@ -83,8 +91,8 @@ class WithNBigRocketCoresWithWGM(
   crossing: RocketCrossingParams,
 ) extends Config((site, here, up) => {
   case TilesLocated(`location`) => {
-    require (n <= 4)
-    val nMaxWids = 4
+    val nMaxWids = site(NWorlds)
+    require (n <= nMaxWids)
     val prev = up(TilesLocated(`location`), site)
     val idOffset = up(NumTiles)
     val big = RocketTileParams(
@@ -107,6 +115,7 @@ class WithNBigRocketCoresWithWGM(
           postfix = s"rockettile_${i+idOffset}",
           wid = nMaxWids-i-1,
           widWidth = log2Ceil(site(NWorlds)),
+          mwid = site(NWorlds) - 1,
           address = site(WGMarkerBaseAddressKey) + BigInt(0x100000 * i),
           size = 4096
         )
@@ -167,7 +176,7 @@ class WithOneWGAwareRocketOneRocketWithWGMarker(
   crossing: RocketCrossingParams,
 ) extends Config((site, here, up) => {
   case TilesLocated(`location`) => {
-    val nMaxWids = 4
+    val nMaxWids = site(NWorlds)
     val prev = up(TilesLocated(`location`), site)
     val idOffset = up(NumTiles)
 
@@ -212,6 +221,7 @@ class WithOneWGAwareRocketOneRocketWithWGMarker(
                 postfix = s"rockettile_${i+idOffset}",
                 wid = i,
                 widWidth = log2Ceil(site(NWorlds)),
+                mwid = site(NWorlds) - 1,
                 address = site(WGMarkerBaseAddressKey) + BigInt(0x100000 * i),
                 size = 4096
               )
